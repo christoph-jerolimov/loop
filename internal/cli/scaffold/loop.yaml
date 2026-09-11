@@ -1,0 +1,80 @@
+# loop project configuration. See docs/configuration.md for every option.
+name: my-service
+
+repo:
+  url: git@github.com:my-org/my-service.git
+  base: main
+  workdir: worktree          # worktree (default, fast) or clone
+  branch_prefix: loop/
+
+# Backlog sources, in pick-up order. Within a source the oldest item is
+# picked first. Items can depend on each other via "depends on: ..." lines,
+# frontmatter, or native Jira links.
+sources:
+  - name: backlog
+    type: markdown
+    path: backlog            # folder of *.md files with optional frontmatter
+    claim: true              # writes status: in-progress + loop_run into the file
+
+  - name: gh
+    type: github
+    # repo: my-org/my-service   (defaults to repo.url)
+    labels: [ready-for-agent]   # recommended: only pick explicitly marked issues
+    claim_label: loop:in-progress
+    comments: true              # load issue comments into the prompt data
+
+  # - name: jira
+  #   type: jira
+  #   url: https://my-org.atlassian.net
+  #   jql: project = ABC AND labels = agent AND statusCategory != Done
+  #   claim_label: loop-in-progress
+  #   transitions:
+  #     in_progress: In Progress
+  #     done: Done
+
+# Prompt templates (Go text/template). Omit an entry to use the built-in
+# default; run "loop init" to get editable copies in prompts/.
+prompts:
+  session: prompts/session.md
+  review: prompts/review.md
+  ci: prompts/ci.md
+  conflict: prompts/conflict.md
+  verify: prompts/verify.md
+
+agent:
+  runner: claude             # claude or cursor
+  # model: claude-opus-5     # per-item override: "model:" line or frontmatter
+  permission_mode: acceptEdits
+  timeout: 45m
+  max_turns: 200
+  attempts: 2                # retries for the initial session
+  # skills:                  # folders symlinked into <workdir>/.claude/skills
+  #   - ~/skills/my-team-conventions
+
+steps:
+  setup: []                  # after checkout and hooks; scripts or agent prompts
+    # - run: npm ci
+  verify: []                 # after the session; a failing script starts a fix session
+    # - name: tests
+    #   run: npm test
+    # - name: self-review
+    #   agent: prompts/self-review.md
+
+pr:
+  draft: true                # opened as draft, marked ready once CI is green
+  title: "{{ .Item.Title }}"
+  # body: prompts/pr-body.md
+  reviewers: []
+  labels: []
+  link_issue: true           # "Closes #n" for GitHub issues
+
+workflow:
+  poll_interval: 60s
+  fix_rounds: 3              # review/CI fix sessions per run
+  conflict_attempts: 1
+  merge: manual              # manual | when-green | when-green-and-approved | github-auto-merge
+  merge_method: squash
+  delete_branch: true
+  close_issue_on_merge: true # item is done only when the ticket is closed
+  gates: []                  # before-pr, before-fix, before-merge (loop approve <run>)
+  concurrency: 1
