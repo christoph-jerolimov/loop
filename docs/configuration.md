@@ -178,7 +178,7 @@ Optional keys: `name`, `model` and `timeout` (agent steps).
 | Phase | When |
 | --- | --- |
 | `steps.setup` | After checkout, before the session. |
-| `steps.verify` | After the session and after every verify fix. A failing `run` or `script` step starts a session with the `verify` template; a failing `agent` step fails the run. |
+| `steps.verify` | After the initial session and after every review, CI or conflict fix round, before anything is pushed. A failing `run` or `script` step starts a session with the `verify` template and the list runs again; a failing `agent` step fails the run. |
 | `steps.before_pr` | After verify, before the push. A failure fails the run. |
 | `steps.merged` | After the PR merged. Failures are logged. |
 | `steps.cleanup` | Before the workdir is removed. Failures are logged. |

@@ -90,7 +90,7 @@ loop watch --pick         # long-running worker`;
       <div class="step"><h3>Pick</h3><p>Items are ordered by source, then oldest first. <code>depends on:</code> lines, frontmatter and Jira links block items until their dependencies are closed.</p></div>
       <div class="step"><h3>Checkout</h3><p>A git worktree on <code>loop/&lt;id&gt;-&lt;title&gt;</code>. The item is claimed with a label, a comment or a frontmatter flag so no second loop grabs it.</p></div>
       <div class="step"><h3>Session</h3><p>Your session template is rendered with the ticket (and its comments, if you want them) and the agent runs headlessly. Join any session with <code>loop join</code>.</p></div>
-      <div class="step"><h3>Verify</h3><p>Scripts or agent steps run in the workdir. A failing check feeds its output back into a fix session before anything is pushed.</p></div>
+      <div class="step"><h3>Verify</h3><p>Scripts or agent steps run in the workdir after the session and after every fix round. A failing check feeds its output back into a fix session before anything is pushed.</p></div>
       <div class="step"><h3>Pull request</h3><p>A draft PR from a template, linked to the ticket. It is marked ready for review the first time CI is green.</p></div>
       <div class="step"><h3>Monitor &amp; merge</h3><p>Conflicts, red CI and review comments each start a bounded fix round. Merge by policy, behind optional human gates, then close the ticket and clean up.</p></div>
     </div>

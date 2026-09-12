@@ -460,6 +460,11 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		r.SetPhase(state.PhaseMonitor, "nothing to fix")
 		return false, nil
 	}
+	// Whatever the round changed must pass the same checks as the initial
+	// session before it is pushed.
+	if err := e.runVerify(ctx, r); err != nil {
+		return e.blockOrWait(ctx, r, "%s round did not pass verification: %v", reason, err)
+	}
 	sha, _ := gitx.HeadSHA(ctx, r.Workdir)
 	if sha != r.LastPushSHA {
 		e.logf(r, "pushing %s round %d", reason, r.FixRounds)

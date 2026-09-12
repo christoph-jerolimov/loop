@@ -189,7 +189,7 @@ func newLifecycle(t *testing.T, tweak func(cfg *config.Config)) *lifecycle {
 		Sources: []config.SourceConfig{{Name: "backlog", Type: "markdown", Path: "backlog", Claim: true}},
 		Steps: config.Steps{
 			Setup:  []config.Step{{Script: "hooks/setup.sh"}},
-			Verify: []config.Step{{Name: "has-feature", Run: "test -f feature.txt"}},
+			Verify: []config.Step{{Name: "has-feature", Run: `echo run >> "$LOOP_RUN_DIR/verify-runs" && test -f feature.txt`}},
 		},
 		Workflow: config.Workflow{Merge: config.MergeWhenGreenApprove, PollInterval: config.Duration(time.Millisecond), Gates: []string{}},
 	}
@@ -335,6 +335,10 @@ func TestFullLifecycle(t *testing.T) {
 	}
 	if len(r.Sessions) != 3 {
 		t.Errorf("expected 3 agent sessions, got %d", len(r.Sessions))
+	}
+	verifyRuns, _ := os.ReadFile(filepath.Join(r.Dir(), "verify-runs"))
+	if n := strings.Count(string(verifyRuns), "run"); n != 3 {
+		t.Errorf("verify steps should run after the session and after each of the two fix rounds, ran %d times", n)
 	}
 	_ = out
 }
