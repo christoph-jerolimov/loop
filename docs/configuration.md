@@ -97,7 +97,7 @@ See [prompts.md](prompts.md).
 | `timeout` | `45m` | Wall clock limit per session. |
 | `max_turns` | `200` | Passed to `claude --max-turns`. |
 | `attempts` | `2` | Attempts for the initial session before the run fails. |
-| `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. |
+| `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. The links are kept out of git through the repository's `info/exclude`. |
 | `env` | none | Extra environment variables for sessions and steps. |
 | `extra_args` | none | Extra CLI arguments. |
 

@@ -342,6 +342,8 @@ func (e *Engine) linkSkills(r *state.Run) error {
 }
 
 // ensureExcluded keeps linked skills out of git via .git/info/exclude.
+// Worktrees share that file with the base clone, so a pattern is only
+// appended when it is not there yet.
 func (e *Engine) ensureExcluded(workdir, pattern string) {
 	out, err := gitx.Run(context.Background(), workdir, "rev-parse", "--git-path", "info/exclude")
 	if err != nil {
@@ -351,9 +353,18 @@ func (e *Engine) ensureExcluded(workdir, pattern string) {
 		out = filepath.Join(workdir, out)
 	}
 	_ = os.MkdirAll(filepath.Dir(out), 0o755)
+	existing, _ := os.ReadFile(out)
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return
+		}
+	}
 	f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
+	}
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		fmt.Fprintln(f)
 	}
 	fmt.Fprintln(f, pattern)
 	f.Close()
