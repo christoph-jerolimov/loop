@@ -1,0 +1,139 @@
+---
+import { Code } from 'astro:components';
+import Base from '../layouts/Base.astro';
+import { href } from '../lib/docs';
+
+const repo = 'https://github.com/christoph-jerolimov/loop';
+
+const loopYaml = `name: my-service
+repo:
+  url: git@github.com:acme/my-service.git
+  base: main
+sources:
+  - name: backlog
+    type: markdown          # backlog/*.md with frontmatter
+    path: backlog
+  - name: gh
+    type: github            # issues labelled ready-for-agent
+    labels: [ready-for-agent]
+    claim_label: loop:in-progress
+agent:
+  runner: claude            # or cursor
+  timeout: 45m
+steps:
+  setup:
+    - script: hooks/setup.sh
+  verify:
+    - run: npm test
+workflow:
+  merge: when-green-and-approved
+  gates: [before-merge]`;
+
+const quickStart = `go install github.com/christoph-jerolimov/loop/cmd/loop@latest
+
+mkdir my-service-loop && cd my-service-loop
+loop init                 # loop.yaml, prompts/, backlog/, hooks/
+$EDITOR loop.yaml         # repo.url and your sources
+$EDITOR backlog/login.md  # write an idea
+
+loop list                 # pick-up order and blockers
+loop run login.md         # one item, end to end
+loop watch --pick         # long-running worker`;
+---
+<Base title="loop · your backlog, worked by agents, delivered as merged PRs" section="home">
+  <section class="container hero">
+    <div>
+      <p class="eyebrow">CLI for teams that ship with coding agents</p>
+      <h1>Your backlog, <em>worked by agents</em>, delivered as merged PRs.</h1>
+      <p class="lead">
+        loop picks ideas, goals and tickets from markdown, GitHub issues or Jira, runs Claude Code or Cursor in a fresh worktree, opens a pull request, and keeps driving it through CI and review until it is merged and the ticket is closed.
+      </p>
+      <div class="actions">
+        <a class="btn primary" href={href('/docs/')}>Read the docs</a>
+        <a class="btn" href={repo} rel="noopener">View on GitHub</a>
+      </div>
+    </div>
+    <div class="terminal" aria-label="Example terminal session">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <pre><code><span class="prompt">$</span> loop list
+#  ID              TITLE                 STATUS
+1  backlog:auth    Add OAuth login       <span class="ok">ready</span>
+2  gh:142          Rate limit the API    <span class="ok">ready</span>
+3  backlog:search  Search across orgs    <span class="warn">blocked by auth.md</span>
+
+<span class="prompt">$</span> loop run auth.md
+<span class="dim">[backlog:auth]</span> creating worktree .loop/workdirs/auth-add-oauth-login
+<span class="dim">[backlog:auth]</span> starting session (claude)
+<span class="dim">[backlog:auth]</span> verify step: npm test
+<span class="dim">[backlog:auth]</span> opened PR https://github.com/acme/my-service/pull/318
+<span class="dim">[backlog:auth]</span> CI red → pushing ci round 1
+<span class="dim">[backlog:auth]</span> CI green, marking PR ready for review
+<span class="dim">[backlog:auth]</span> merging PR #318 (squash)
+<span class="dim">[backlog:auth]</span> <span class="ok">done</span></code></pre>
+    </div>
+  </section>
+
+  <section class="container section">
+    <p class="eyebrow">How it works</p>
+    <h2>One iteration, start to finish</h2>
+    <p class="sub">Every phase is persisted, so a crashed worker picks up where it stopped. Nothing is hidden: prompts, steps and scripts all live in your loop project and are referenced from <code>loop.yaml</code>.</p>
+    <div class="steps">
+      <div class="step"><h3>Pick</h3><p>Items are ordered by source, then oldest first. <code>depends on:</code> lines, frontmatter and Jira links block items until their dependencies are closed.</p></div>
+      <div class="step"><h3>Checkout</h3><p>A git worktree on <code>loop/&lt;id&gt;-&lt;title&gt;</code>. The item is claimed with a label, a comment or a frontmatter flag so no second loop grabs it.</p></div>
+      <div class="step"><h3>Session</h3><p>Your session template is rendered with the ticket (and its comments, if you want them) and the agent runs headlessly. Join any session with <code>loop join</code>.</p></div>
+      <div class="step"><h3>Verify</h3><p>Scripts or agent steps run in the workdir. A failing check feeds its output back into a fix session before anything is pushed.</p></div>
+      <div class="step"><h3>Pull request</h3><p>A draft PR from a template, linked to the ticket. It is marked ready for review the first time CI is green.</p></div>
+      <div class="step"><h3>Monitor &amp; merge</h3><p>Conflicts, red CI and review comments each start a bounded fix round. Merge by policy, behind optional human gates, then close the ticket and clean up.</p></div>
+    </div>
+  </section>
+
+  <section class="container section">
+    <div class="split">
+      <div class="prose">
+        <p class="eyebrow">Configuration</p>
+        <h2>Everything in one file</h2>
+        <p>A loop project is a folder with a <code>loop.yaml</code>, your backlog, prompt templates and hook scripts. Commit it next to your team's other tooling.</p>
+        <p>Sources, agent runner, models, limits, verify steps, PR settings and the merge policy are all declared here. State lives in a git-ignored <code>.loop/</code> folder as readable YAML.</p>
+        <p><a href={href('/docs/configuration/')}>Configuration reference →</a></p>
+      </div>
+      <Code code={loopYaml} lang="yaml" theme="github-dark-default" />
+    </div>
+  </section>
+
+  <section class="container section">
+    <p class="eyebrow">Built for real repositories</p>
+    <h2>What you get</h2>
+    <div class="features">
+      <div class="feature"><h3>Three backlog sources</h3><p>Markdown files with frontmatter, GitHub issues filtered by label, and Jira via JQL. Mix them in one project; references resolve across sources.</p></div>
+      <div class="feature"><h3>Dependencies that mean it</h3><p>A ticket that says <code>depends on: #12, PROJ-7</code> waits until both are closed. <code>loop run --force</code> when you know better.</p></div>
+      <div class="feature"><h3>Bounded fix rounds</h3><p>Review feedback, failing checks and merge conflicts each get their own prompt template and a hard limit. Past it, the run parks with a note on the PR.</p></div>
+      <div class="feature"><h3>Merge policies and gates</h3><p><code>manual</code>, <code>when-green</code>, <code>when-green-and-approved</code> or GitHub auto-merge. Pause before the PR, before fixes or before the merge until <code>loop approve</code>.</p></div>
+      <div class="feature"><h3>Claude Code or Cursor</h3><p>Sessions run through the official CLIs with your repository's own <code>CLAUDE.md</code>, <code>AGENTS.md</code> or Cursor rules, plus skills you link in.</p></div>
+      <div class="feature"><h3>Inspectable runs</h3><p>Each run keeps its <code>run.yaml</code>, every prompt it sent, every agent transcript and the PR summary. <code>loop status</code> shows where things stand.</p></div>
+    </div>
+  </section>
+
+  <section class="container section">
+    <div class="split">
+      <div class="prose">
+        <p class="eyebrow">Quick start</p>
+        <h2>Five minutes to the first PR</h2>
+        <p>You need <code>git</code>, the <code>claude</code> or Cursor <code>agent</code> CLI, and a GitHub token. Jira needs an API token as well.</p>
+        <p>Start with <code>merge: manual</code>: loop opens the PR, keeps it green and leaves the merge to you until you trust the workflow.</p>
+        <p><a href={href('/docs/workflow/')}>Workflow, gates and merge policies →</a></p>
+      </div>
+      <Code code={quickStart} lang="bash" theme="github-dark-default" />
+    </div>
+  </section>
+
+  <section class="container section">
+    <div class="cta">
+      <h2>Point it at a backlog</h2>
+      <p>Open source, a single Go binary, no service to run.</p>
+      <div class="actions" style="justify-content:center; display:flex; gap:.75rem; flex-wrap:wrap">
+        <a class="btn primary" href={href('/docs/')}>Documentation</a>
+        <a class="btn" href={repo} rel="noopener">github.com/christoph-jerolimov/loop</a>
+      </div>
+    </div>
+  </section>
+</Base>

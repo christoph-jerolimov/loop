@@ -1,0 +1,48 @@
+---
+import '../styles/global.css';
+import { href } from '../lib/docs';
+
+interface Props {
+  title: string;
+  description?: string;
+  section?: 'home' | 'docs';
+}
+const { title, description = 'loop runs AI coding sessions from your backlog and drives the resulting pull requests to merge.', section } = Astro.props;
+const repo = 'https://github.com/christoph-jerolimov/loop';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container row">
+        <a class="brand" href={href('/')}>
+          <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111a2e"/><path d="M16 6a10 10 0 1 0 10 10" fill="none" stroke="#5eead4" stroke-width="3.2" stroke-linecap="round"/><path d="M22 6l4.5 4.5L22 15" fill="none" stroke="#5eead4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          loop
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <a href={href('/')} aria-current={section === 'home' ? 'page' : undefined}>Overview</a>
+          <a href={href('/docs/')} aria-current={section === 'docs' ? 'page' : undefined}>Docs</a>
+          <a href={repo} rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="container row">
+        <span>loop · backlog-driven AI session orchestration</span>
+        <span><a href={repo} rel="noopener">Source on GitHub</a> · <a href={href('/docs/')}>Documentation</a></span>
+      </div>
+    </footer>
+  </body>
+</html>

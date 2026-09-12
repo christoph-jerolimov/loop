@@ -1,0 +1,24 @@
+---
+import { sortedDocs, titleOf, hrefOf, isExample, href } from '../lib/docs';
+
+interface Props { current?: string }
+const { current } = Astro.props;
+const docs = await sortedDocs();
+const guides = docs.filter((d) => !isExample(d));
+const examples = docs.filter(isExample);
+---
+<aside class="sidebar">
+  <h4>Documentation</h4>
+  <ul>
+    <li><a href={href('/docs/')} aria-current={current === undefined ? 'page' : undefined}>Overview</a></li>
+    {guides.map((d) => <li><a href={hrefOf(d)} aria-current={current === d.id ? 'page' : undefined}>{titleOf(d)}</a></li>)}
+  </ul>
+  {examples.length > 0 && (
+    <>
+      <h4>Prompt examples</h4>
+      <ul>
+        {examples.map((d) => <li><a href={hrefOf(d)} aria-current={current === d.id ? 'page' : undefined}>{titleOf(d)}</a></li>)}
+      </ul>
+    </>
+  )}
+</aside>
