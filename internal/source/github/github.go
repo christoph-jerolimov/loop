@@ -18,6 +18,9 @@ type Source struct {
 	cfg   config.SourceConfig
 	index int
 	api   *ghapi.Client
+
+	// comments caches the effective setting when loop.yaml leaves it unset.
+	comments *bool
 }
 
 // New creates the source; the client is created lazily so listing local
@@ -121,7 +124,43 @@ func (s *Source) Get(ctx context.Context, native string) (*item.Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, is, s.cfg.Comments == nil || *s.cfg.Comments)
+	return s.convert(ctx, is, s.CommentsEnabled(ctx))
+}
+
+// CommentsEnabled reports whether ticket comments are loaded. An explicit
+// comments: setting wins; otherwise comments are loaded only on private
+// repositories, since on a public one anyone can write them and they reach
+// the agent verbatim. When the repository cannot be read the safe answer
+// is no.
+func (s *Source) CommentsEnabled(ctx context.Context) bool {
+	if s.cfg.Comments != nil {
+		return *s.cfg.Comments
+	}
+	if s.comments != nil {
+		return *s.comments
+	}
+	enabled := false
+	if api, err := s.client(); err == nil {
+		if repo, err := api.GetRepository(ctx); err == nil {
+			enabled = repo.Private
+		}
+	}
+	s.comments = &enabled
+	return enabled
+}
+
+// CommentsReason explains the effective comments setting for loop doctor.
+func (s *Source) CommentsReason(ctx context.Context) string {
+	if s.cfg.Comments != nil {
+		if *s.cfg.Comments {
+			return "loaded (comments: true)"
+		}
+		return "not loaded (comments: false)"
+	}
+	if s.CommentsEnabled(ctx) {
+		return "loaded (private repository)"
+	}
+	return "not loaded (public repository; set comments: true to load them)"
 }
 
 var (

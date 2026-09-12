@@ -113,7 +113,7 @@ loop watch --pick         # long-running worker`;
     <p class="eyebrow">Built for real repositories</p>
     <h2>What you get</h2>
     <div class="features">
-      <div class="feature"><h3>Three backlog sources</h3><p>Markdown files with frontmatter, GitHub issues filtered by label, and Jira via JQL. Mix them in one project; references resolve across sources.</p></div>
+      <div class="feature"><h3>Three backlog sources</h3><p>Markdown files with frontmatter, GitHub issues filtered by label, and Jira via JQL. Mix them in one project; references resolve across sources. Comments from public repositories stay out of the prompt unless you opt in.</p></div>
       <div class="feature"><h3>Dependencies that mean it</h3><p>A ticket that says <code>depends on: #12, PROJ-7</code> waits until both are closed. <code>loop run --force</code> when you know better.</p></div>
       <div class="feature"><h3>Bounded fix rounds</h3><p>Review feedback, failing checks (with the job log) and merge conflicts each get their own prompt template and a hard limit. Past it, the run parks with a note on the PR and runs your <code>steps.blocked</code> notification.</p></div>
       <div class="feature"><h3>Merge policies and gates</h3><p><code>manual</code>, <code>when-green</code>, <code>when-green-and-approved</code> or GitHub auto-merge. Pause before the PR, before fixes or before the merge until <code>loop approve</code>.</p></div>

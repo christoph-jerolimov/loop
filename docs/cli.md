@@ -26,7 +26,7 @@ Run every check a run depends on, before any worktree is created:
 | Tools | `git` and the agent CLI (`claude`, or `agent` for Cursor) are on the `PATH`; a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
 | Repository | `repo.url` is reachable and has the base branch. |
 | Credentials | The GitHub token is accepted, can push to the repository, and the default branch matches `repo.base` (warning otherwise). Jira credentials are accepted for every Jira site. |
-| Sources | Every source can be listed; the number of open items is shown. |
+| Sources | Every source can be listed; the number of open items is shown, and for GitHub sources whether ticket comments are loaded and why. |
 | State | `.loop/` can be created. |
 
 Exits non-zero when any check fails. Run it after editing `loop.yaml` and

@@ -42,6 +42,9 @@ session template, not by code. Two ready-made variants:
 Copy one to `prompts/session.md`, or point `prompts.session` at it. If you
 never want comments loaded at all (for example to keep the prompt small),
 set `comments: false` on the source; `.Item.Comments` is then always empty.
+On public GitHub repositories comments are not loaded unless the source
+sets `comments: true`, because anyone can write them and they reach the
+agent verbatim; see [security](security.md).
 
 The same pattern applies to fix rounds: the review, CI and conflict
 templates receive the feedback as data and decide how to present it.

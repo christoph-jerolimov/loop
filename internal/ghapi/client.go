@@ -476,6 +476,7 @@ func (c *Client) Viewer(ctx context.Context) (string, error) {
 type Repository struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
+	Private       bool   `json:"private"`
 	Permissions   struct {
 		Push  bool `json:"push"`
 		Admin bool `json:"admin"`
