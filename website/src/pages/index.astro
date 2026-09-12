@@ -29,7 +29,8 @@ workflow:
   merge: when-green-and-approved
   gates: [before-merge]`;
 
-const quickStart = `go install github.com/christoph-jerolimov/loop/cmd/loop@latest
+const quickStart = `# grab a binary from github.com/christoph-jerolimov/loop/releases, or:
+go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 
 mkdir my-service-loop && cd my-service-loop
 loop init                 # loop.yaml, prompts/, backlog/, hooks/
@@ -130,7 +131,7 @@ loop watch --pick         # long-running worker`;
   <section class="container section">
     <div class="cta">
       <h2>Point it at a backlog</h2>
-      <p>Open source, a single Go binary, no service to run.</p>
+      <p>Open source, a single Go binary for Linux, macOS and Windows, no service to run.</p>
       <div class="actions" style="justify-content:center; display:flex; gap:.75rem; flex-wrap:wrap">
         <a class="btn primary" href={href('/docs/')}>Documentation</a>
         <a class="btn" href={repo} rel="noopener">github.com/christoph-jerolimov/loop</a>

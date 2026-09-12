@@ -1,7 +1,10 @@
 .PHONY: build test lint install
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X github.com/christoph-jerolimov/loop/internal/cli.Version=$(VERSION)
+
 build:
-	go build -o bin/loop ./cmd/loop
+	go build -ldflags "$(LDFLAGS)" -o bin/loop ./cmd/loop
 
 test:
 	go test ./...
@@ -11,4 +14,4 @@ lint:
 	go vet ./...
 
 install:
-	go install ./cmd/loop
+	go install -ldflags "$(LDFLAGS)" ./cmd/loop

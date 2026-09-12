@@ -15,6 +15,12 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./cmd/loop
+      - run: GOOS=windows go build ./cmd/loop && GOOS=darwin go build ./cmd/loop
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
   website:
     runs-on: ubuntu-latest
     defaults:
