@@ -250,6 +250,10 @@ func TestFullLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(r.Dir(), "run.yaml")); err != nil {
 		t.Errorf("run.yaml not written: %v", err)
 	}
+	settings, err := os.ReadFile(filepath.Join(r.Workdir, ".claude", "settings.local.json"))
+	if err != nil || !strings.Contains(string(settings), `"Bash(git commit:*)"`) || !strings.Contains(string(settings), `"Bash(git push:*)"`) || !strings.Contains(string(settings), `"defaultMode": "acceptEdits"`) {
+		t.Errorf("permission rules not written to the workdir: %v\n%s", err, settings)
+	}
 	if got := run(t, filepath.Join(proj, "backlog"), "cat", "auth.md"); !strings.Contains(got, "in-progress") {
 		t.Errorf("item not claimed:\n%s", got)
 	}

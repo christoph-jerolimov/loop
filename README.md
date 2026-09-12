@@ -29,6 +29,12 @@ CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
 Windows, `run:` steps need an `sh` on the `PATH` (Git for Windows provides
 one); `script:` and `agent:` steps do not.
 
+Headless Claude sessions can only run commands the permission rules allow.
+loop writes `agent.allow` and `agent.deny` from `loop.yaml` into the
+workdir before each session (git add and commit allowed, git push denied by
+default); add your test command there, see
+[configuration](docs/configuration.md#permissions-in-headless-sessions).
+
 ## Quick start
 
 ```sh

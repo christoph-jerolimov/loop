@@ -87,3 +87,16 @@ func TestCursorLongPromptViaStdinAndFile(t *testing.T) {
 		t.Errorf("stdin should carry the full prompt (%d bytes), got %d", len(long), len(got))
 	}
 }
+
+func TestClaudeSettings(t *testing.T) {
+	b, err := ClaudeSettings("acceptEdits", []string{"Bash(npm test:*)"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{`"defaultMode": "acceptEdits"`, `"allow": [`, `"Bash(npm test:*)"`, `"deny": []`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("settings missing %q:\n%s", want, got)
+		}
+	}
+}

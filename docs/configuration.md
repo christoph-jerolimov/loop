@@ -93,13 +93,46 @@ See [prompts.md](prompts.md).
 | `runner` | `claude` | `claude` (Claude Code CLI) or `cursor` (Cursor `agent` CLI). |
 | `command` | runner name | Executable override. |
 | `model` | runner default | Model for every session. Items override it with a `model:` line or frontmatter. |
-| `permission_mode` | `acceptEdits` | Passed to `claude --permission-mode`. |
+| `permission_mode` | `acceptEdits` | Claude only: `default`, `acceptEdits`, `bypassPermissions` or `plan`. Written to the workdir settings and passed to `claude --permission-mode`. |
+| `allow` | git defaults | Claude only: permission rules the headless session may use without prompting, for example `Bash(npm test:*)`. See below. |
+| `deny` | `git push`, `gh pr`, `gh api`, `git reset --hard` | Claude only: rules the session may never use. |
 | `timeout` | `45m` | Wall clock limit per session. |
 | `max_turns` | `200` | Passed to `claude --max-turns`. |
 | `attempts` | `2` | Attempts for the initial session before the run fails. |
 | `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. The links are kept out of git through the repository's `info/exclude`. |
 | `env` | none | Extra environment variables for sessions and steps. |
 | `extra_args` | none | Extra CLI arguments. |
+
+### Permissions in headless sessions
+
+A headless `claude -p` session cannot ask for permission: a tool call the
+rules do not allow is denied, and an agent that cannot run the tests or
+commit stalls or gives up. Before every session loop writes
+`<workdir>/.claude/settings.local.json` (kept out of git) with
+`permission_mode` as the default mode and the `allow` and `deny` rules, so
+the headless session and anyone who later joins it with `loop join` get the
+same rules.
+
+The defaults allow the git commands needed to inspect and commit work and
+deny `git push`, `gh pr`, `gh api` and `git reset --hard`, because pushing
+and opening the PR is loop's job. The defaults contain nothing project
+specific, so add the commands your verify steps and your agent need:
+
+```yaml
+agent:
+  permission_mode: acceptEdits
+  allow:
+    - "Bash(npm test:*)"
+    - "Bash(npm run lint:*)"
+    - "Bash(go test:*)"
+```
+
+Setting `allow` replaces the defaults; include the git rules you still
+want. `permission_mode: bypassPermissions` skips all checks and is the
+quickest way to get a first run going in a sandbox, at the cost of the
+agent being able to run anything. `loop doctor` warns when only the default
+rules are configured. The Cursor runner always runs with `--force`, which
+is Cursor's equivalent of bypassing permissions.
 
 How the prompt reaches the agent: `claude` receives it on standard input
 with a pre-assigned session id. `agent` (Cursor) receives short prompts
