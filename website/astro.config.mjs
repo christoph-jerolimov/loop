@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import { satteri } from '@astrojs/markdown-satteri';
 import { docLinks } from './src/lib/doc-links.mjs';
+import { headingAnchors } from './src/lib/heading-anchors.mjs';
 
 // The Pages workflow passes the site origin and base path from
 // actions/configure-pages, so the same config serves github.io/<repo>/
@@ -15,6 +16,6 @@ export default defineConfig({
   markdown: {
     syntaxHighlight: 'shiki',
     shikiConfig: { theme: 'github-dark-default', wrap: false },
-    processor: satteri({ mdastPlugins: [docLinks(base)] }),
+    processor: satteri({ mdastPlugins: [docLinks(base)], hastPlugins: [headingAnchors] }),
   },
 });

@@ -20,6 +20,13 @@ How the docs section works:
   instead of rendered markdown.
 - `src/lib/doc-links.mjs` rewrites relative links between the markdown files
   (`prompts.md`, `examples/session-with-comments.md`) to the site routes.
+- `src/lib/heading-anchors.mjs` appends anchor links to `h2`/`h3` headings;
+  the docs page renders an "On this page" outline from the same headings.
+
+Rendered docs are cached in `.astro/` and `node_modules/.astro/` between
+builds. After changing a
+Markdown plugin (`src/lib/*.mjs`) delete both folders, or the pages keep
+the previous output.
 
 ## Deployment
 
