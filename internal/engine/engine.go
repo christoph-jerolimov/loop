@@ -18,7 +18,6 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
-	"github.com/christoph-jerolimov/loop/internal/hooks"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/source"
@@ -362,28 +361,40 @@ func (e *Engine) ensureExcluded(workdir, pattern string) {
 
 func (e *Engine) setup(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseSetup, "")
-	if err := hooks.Run(ctx, e.Cfg.Dir, hooks.Setup, r.Workdir, e.env(r), e.Out); err != nil {
+	if err := e.runSteps(ctx, r, e.Cfg.Steps.Setup, "setup"); err != nil {
 		return err
-	}
-	for _, st := range e.Cfg.Steps.Setup {
-		if _, err := e.runStep(ctx, r, st, "setup"); err != nil {
-			return err
-		}
 	}
 	r.SetPhase(state.PhaseSession, "")
 	return nil
 }
 
-// runStep executes one configured step; for scripts it returns the
-// combined output and an error on non-zero exit.
-func (e *Engine) runStep(ctx context.Context, r *state.Run, st config.Step, phase string) (string, error) {
-	name := st.Name
-	if name == "" {
-		name = firstNonEmpty(st.Run, st.Agent)
+// runSteps executes a step list in order and stops at the first failure.
+func (e *Engine) runSteps(ctx context.Context, r *state.Run, steps []config.Step, phase string) error {
+	for _, st := range steps {
+		if _, err := e.runStep(ctx, r, st, phase); err != nil {
+			return err
+		}
 	}
-	if st.Run != "" {
-		e.logf(r, "%s step: %s", phase, name)
-		cmd := exec.CommandContext(ctx, "sh", "-c", st.Run)
+	return nil
+}
+
+// runStep executes one configured step inside the workdir. For run and
+// script steps it returns the combined output and an error on non-zero exit.
+func (e *Engine) runStep(ctx context.Context, r *state.Run, st config.Step, phase string) (string, error) {
+	name := st.Label()
+	if st.Run != "" || st.Script != "" {
+		var cmd *exec.Cmd
+		if st.Run != "" {
+			e.logf(r, "%s step: %s", phase, name)
+			cmd = exec.CommandContext(ctx, "sh", "-c", st.Run)
+		} else {
+			script := e.Cfg.Resolve(st.Script)
+			if _, err := os.Stat(script); err != nil {
+				return "", fmt.Errorf("step %q: %w", name, err)
+			}
+			e.logf(r, "%s script: %s", phase, st.Script)
+			cmd = exec.CommandContext(ctx, script)
+		}
 		cmd.Dir = r.Workdir
 		cmd.Env = os.Environ()
 		for k, v := range e.env(r) {

@@ -95,19 +95,61 @@ type Agent struct {
 	ExtraArgs      []string          `yaml:"extra_args"`
 }
 
-// Step is either a shell command or an agent session driven by a prompt template.
+// Step is a shell command (run), a script file relative to loop.yaml
+// (script), or an agent session driven by a prompt template (agent).
+// Every kind executes inside the workdir.
 type Step struct {
 	Name    string   `yaml:"name"`
 	Run     string   `yaml:"run"`
+	Script  string   `yaml:"script"`
 	Agent   string   `yaml:"agent"`
 	Model   string   `yaml:"model"`
 	Timeout Duration `yaml:"timeout"`
 }
 
-// Steps groups steps by phase.
+// Kind returns run, script or agent.
+func (s Step) Kind() string {
+	switch {
+	case s.Run != "":
+		return "run"
+	case s.Script != "":
+		return "script"
+	case s.Agent != "":
+		return "agent"
+	}
+	return ""
+}
+
+// Label is the step name or, when unset, its command or path.
+func (s Step) Label() string {
+	if s.Name != "" {
+		return s.Name
+	}
+	for _, v := range []string{s.Run, s.Script, s.Agent} {
+		if v != "" {
+			return v
+		}
+	}
+	return "step"
+}
+
+// Steps groups steps by phase. All of them are optional.
 type Steps struct {
-	Setup  []Step `yaml:"setup"`
+	// Setup runs in the fresh workdir after checkout, before the session.
+	Setup []Step `yaml:"setup"`
+	// Verify runs after the session; a failing run/script step starts a fix session.
 	Verify []Step `yaml:"verify"`
+	// BeforePR runs after verify, before the branch is pushed.
+	BeforePR []Step `yaml:"before_pr"`
+	// Merged runs once the PR has been merged.
+	Merged []Step `yaml:"merged"`
+	// Cleanup runs before the workdir is removed.
+	Cleanup []Step `yaml:"cleanup"`
+}
+
+// All returns every configured step list with its phase name.
+func (s Steps) All() map[string][]Step {
+	return map[string][]Step{"setup": s.Setup, "verify": s.Verify, "before_pr": s.BeforePR, "merged": s.Merged, "cleanup": s.Cleanup}
 }
 
 // PR configures pull request creation.
@@ -393,9 +435,17 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("unknown gate %q", g))
 		}
 	}
-	for _, st := range append(append([]Step{}, c.Steps.Setup...), c.Steps.Verify...) {
-		if (st.Run == "") == (st.Agent == "") {
-			errs = append(errs, fmt.Errorf("step %q must set exactly one of run or agent", st.Name))
+	for phase, steps := range c.Steps.All() {
+		for _, st := range steps {
+			n := 0
+			for _, v := range []string{st.Run, st.Script, st.Agent} {
+				if v != "" {
+					n++
+				}
+			}
+			if n != 1 {
+				errs = append(errs, fmt.Errorf("steps.%s step %q must set exactly one of run, script or agent", phase, st.Label()))
+			}
 		}
 	}
 	if c.Repo.GitHub == "" {

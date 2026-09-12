@@ -23,7 +23,7 @@ var (
 var runCmd = &cobra.Command{
 	Use:   "run [item]",
 	Short: "Work on one item (or --all ready items) and drive the PR until the ticket is closed",
-	Long: `Starts a run for the item: checkout, setup hooks, agent session, verify
+	Long: `Starts a run for the item: checkout, setup steps, agent session, verify
 steps, pull request, then polls the PR for reviews and CI until it is merged
 and the ticket closed. Items with open dependencies or an in-progress marker
 are refused unless --force is given.

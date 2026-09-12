@@ -1,4 +1,2 @@
 # loop state: base clone, workdirs and run logs
-.loop/repo/
-.loop/workdirs/
-.loop/runs/
+.loop/

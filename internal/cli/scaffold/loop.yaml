@@ -51,14 +51,20 @@ agent:
   # skills:                  # folders symlinked into <workdir>/.claude/skills
   #   - ~/skills/my-team-conventions
 
+# Steps run inside the workdir. Each is one of:
+#   run: <shell command>        script: <file relative to loop.yaml>        agent: <prompt template>
 steps:
-  setup: []                  # after checkout and hooks; scripts or agent prompts
+  setup:                     # after checkout, before the session
+    - script: hooks/setup.sh
     # - run: npm ci
-  verify: []                 # after the session; a failing script starts a fix session
+  verify: []                 # after the session; a failing run/script step starts a fix session
     # - name: tests
     #   run: npm test
     # - name: self-review
     #   agent: prompts/self-review.md
+  before_pr: []              # after verify, before the push
+  merged: []                 # after the PR merged
+  cleanup: []                # before the workdir is removed
 
 pr:
   draft: true                # opened as draft, marked ready once CI is green

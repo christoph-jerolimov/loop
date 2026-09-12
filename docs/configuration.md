@@ -96,28 +96,49 @@ See [prompts.md](prompts.md).
 | `max_turns` | `200` | Passed to `claude --max-turns`. |
 | `attempts` | `2` | Attempts for the initial session before the run fails. |
 | `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. |
-| `env` | none | Extra environment variables for sessions, steps and hooks. |
+| `env` | none | Extra environment variables for sessions and steps. |
 | `extra_args` | none | Extra CLI arguments. |
 
 ## `steps`
 
-`steps.setup` runs after checkout and hooks; `steps.verify` runs after the
-session and after every verify fix. Each step is either `run: <shell>` or
-`agent: <prompt template path>`, with optional `name`, `model`, `timeout`.
+Everything loop runs around a session is a step list in `loop.yaml`. There
+are no hidden hook directories and no global configuration. Each step is
+exactly one of:
+
+| Kind | Meaning |
+| --- | --- |
+| `run: <command>` | Shell command executed with `sh -c` inside the workdir. |
+| `script: <path>` | Executable file, path relative to `loop.yaml`, executed inside the workdir. |
+| `agent: <path>` | Prompt template rendered with the run data and executed as an agent session. |
+
+Optional keys: `name`, `model` and `timeout` (agent steps).
+
+| Phase | When |
+| --- | --- |
+| `steps.setup` | After checkout, before the session. |
+| `steps.verify` | After the session and after every verify fix. A failing `run` or `script` step starts a session with the `verify` template; a failing `agent` step fails the run. |
+| `steps.before_pr` | After verify, before the push. A failure fails the run. |
+| `steps.merged` | After the PR merged. Failures are logged. |
+| `steps.cleanup` | Before the workdir is removed. Failures are logged. |
 
 ```yaml
 steps:
   setup:
+    - script: hooks/setup.sh
     - run: npm ci
   verify:
     - name: tests
       run: npm test
     - name: self-review
       agent: prompts/self-review.md
+  merged:
+    - run: echo "merged $LOOP_PR_URL" >> "$LOOP_PROJECT_DIR/merged.log"
 ```
 
-A failing `run` step starts a session with the `verify` template; a failing
-`agent` step fails the run.
+Steps see this environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`,
+`LOOP_WORKDIR`, `LOOP_BRANCH`, `LOOP_BASE`, `LOOP_ITEM_ID`,
+`LOOP_ITEM_TITLE`, `LOOP_ITEM_URL`, `LOOP_RUN_ID`, `LOOP_RUN_DIR`,
+`LOOP_SUMMARY_FILE`, `LOOP_PR_URL`, `LOOP_PR_NUMBER`, plus `agent.env`.
 
 ## `pr`
 
@@ -147,17 +168,15 @@ A failing `run` step starts a session with the `verify` template; a failing
 | `required_checks` | all | Only these check names decide green or red. |
 | `cleanup` | `true` | Remove the workdir when the item is closed. |
 
-## Hooks
+## Run state
 
-Executable files, run in the workdir with the loop environment:
+Each run lives in `.loop/runs/<run id>/`:
 
-- global: `$XDG_CONFIG_HOME/loop/hooks/<phase>` or `~/.config/loop/hooks/<phase>.d/*`
-- project: `.loop/hooks/<phase>` or `.loop/hooks/<phase>.d/*`
-
-Phases: `setup` (after checkout), `before-pr` (after verify, before push),
-`merged`, `cleanup`. Global hooks run before project hooks.
-
-Environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`, `LOOP_WORKDIR`,
-`LOOP_BRANCH`, `LOOP_BASE`, `LOOP_ITEM_ID`, `LOOP_ITEM_TITLE`,
-`LOOP_ITEM_URL`, `LOOP_RUN_ID`, `LOOP_RUN_DIR`, `LOOP_SUMMARY_FILE`,
-`LOOP_PR_URL`, `LOOP_PR_NUMBER`.
+| File | Content |
+| --- | --- |
+| `run.yaml` | Phase, branch, workdir, PR, fix rounds, handled comment ids, sessions, event history. |
+| `run.log` | Human-readable log of the run. |
+| `session-NN-<kind>.prompt.md` | The exact prompt of each agent session. |
+| `session-NN-<kind>.log` | Raw agent output of each session. |
+| `summary.md` | What the agent wrote for the PR description. |
+| `lock` | Advisory lock held by the process driving the run. |

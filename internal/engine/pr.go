@@ -11,7 +11,6 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
-	"github.com/christoph-jerolimov/loop/internal/hooks"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/state"
@@ -27,7 +26,7 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 		e.abandon(ctx, r, err)
 		return false, err
 	}
-	if err := hooks.Run(ctx, e.Cfg.Dir, hooks.BeforePR, r.Workdir, e.env(r), e.Out); err != nil {
+	if err := e.runSteps(ctx, r, e.Cfg.Steps.BeforePR, "before_pr"); err != nil {
 		e.abandon(ctx, r, err)
 		return false, err
 	}
@@ -485,7 +484,9 @@ func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 		return e.blockOrWait(ctx, r, "merge failed: %v", err)
 	}
 	r.PR.Merged = true
-	_ = hooks.Run(ctx, e.Cfg.Dir, hooks.Merged, r.Workdir, e.env(r), e.Out)
+	if err := e.runSteps(ctx, r, e.Cfg.Steps.Merged, "merged"); err != nil {
+		e.logf(r, "merged step failed: %v", err)
+	}
 	r.SetPhase(state.PhaseClose, "")
 	return false, nil
 }
@@ -528,7 +529,9 @@ func (e *Engine) closeItem(ctx context.Context, r *state.Run) (bool, error) {
 func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseCleanup, "")
 	if *e.Cfg.Workflow.Cleanup {
-		_ = hooks.Run(ctx, e.Cfg.Dir, hooks.Cleanup, r.Workdir, e.env(r), e.Out)
+		if err := e.runSteps(ctx, r, e.Cfg.Steps.Cleanup, "cleanup"); err != nil {
+			e.logf(r, "cleanup step failed: %v", err)
+		}
 		e.logf(r, "removing workdir %s", r.Workdir)
 		if e.Cfg.Repo.Workdir == "worktree" {
 			_ = gitx.RemoveWorktree(ctx, e.baseRepo(), r.Workdir)

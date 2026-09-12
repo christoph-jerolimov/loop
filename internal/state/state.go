@@ -1,8 +1,7 @@
-// Package state persists runs under <project>/.loop/runs/<id>/.
+// Package state persists runs as run.yaml under <project>/.loop/runs/<id>/.
 package state
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/christoph-jerolimov/loop/internal/item"
 )
@@ -58,66 +59,66 @@ const (
 
 // PR is the pull request of a run.
 type PR struct {
-	Number  int    `json:"number"`
-	NodeID  string `json:"node_id"`
-	URL     string `json:"url"`
-	HeadSHA string `json:"head_sha"`
-	Draft   bool   `json:"draft"`
-	Merged  bool   `json:"merged"`
+	Number  int    `json:"number" yaml:"number"`
+	NodeID  string `json:"node_id" yaml:"node_id"`
+	URL     string `json:"url" yaml:"url"`
+	HeadSHA string `json:"head_sha" yaml:"head_sha"`
+	Draft   bool   `json:"draft" yaml:"draft"`
+	Merged  bool   `json:"merged" yaml:"merged"`
 }
 
 // Event is one history entry.
 type Event struct {
-	Time    time.Time `json:"time"`
-	Phase   Phase     `json:"phase"`
-	Message string    `json:"message"`
+	Time    time.Time `json:"time" yaml:"time"`
+	Phase   Phase     `json:"phase" yaml:"phase"`
+	Message string    `json:"message" yaml:"message"`
 }
 
 // Run is one iteration over one item.
 type Run struct {
-	ID       string     `json:"id"`
-	ItemID   string     `json:"item_id"`
-	Item     *item.Item `json:"item"`
-	Branch   string     `json:"branch"`
-	Workdir  string     `json:"workdir"`
-	Phase    Phase      `json:"phase"`
-	Runner   string     `json:"runner"`
-	Model    string     `json:"model,omitempty"`
-	Attempt  int        `json:"attempt"`
-	Sessions []Session  `json:"sessions,omitempty"`
+	ID       string     `json:"id" yaml:"id"`
+	ItemID   string     `json:"item_id" yaml:"item_id"`
+	Item     *item.Item `json:"item" yaml:"item"`
+	Branch   string     `json:"branch" yaml:"branch"`
+	Workdir  string     `json:"workdir" yaml:"workdir"`
+	Phase    Phase      `json:"phase" yaml:"phase"`
+	Runner   string     `json:"runner" yaml:"runner"`
+	Model    string     `json:"model,omitempty" yaml:"model,omitempty"`
+	Attempt  int        `json:"attempt" yaml:"attempt"`
+	Sessions []Session  `json:"sessions,omitempty" yaml:"sessions,omitempty"`
 
-	PR              *PR       `json:"pr,omitempty"`
-	FixRounds       int       `json:"fix_rounds"`
-	ConflictRounds  int       `json:"conflict_rounds"`
-	PendingFix      FixReason `json:"pending_fix,omitempty"`
-	HandledComments []int64   `json:"handled_comments,omitempty"`
-	HandledReviews  []int64   `json:"handled_reviews,omitempty"`
-	LastPushSHA     string    `json:"last_push_sha,omitempty"`
-	LastCIFixSHA    string    `json:"last_ci_fix_sha,omitempty"`
+	PR              *PR       `json:"pr,omitempty" yaml:"pr,omitempty"`
+	FixRounds       int       `json:"fix_rounds" yaml:"fix_rounds"`
+	ConflictRounds  int       `json:"conflict_rounds" yaml:"conflict_rounds"`
+	PendingFix      FixReason `json:"pending_fix,omitempty" yaml:"pending_fix,omitempty"`
+	HandledComments []int64   `json:"handled_comments,omitempty" yaml:"handled_comments,omitempty"`
+	HandledReviews  []int64   `json:"handled_reviews,omitempty" yaml:"handled_reviews,omitempty"`
+	LastPushSHA     string    `json:"last_push_sha,omitempty" yaml:"last_push_sha,omitempty"`
+	LastCIFixSHA    string    `json:"last_ci_fix_sha,omitempty" yaml:"last_ci_fix_sha,omitempty"`
 
 	// Gate is the gate the run waits at; GateApproved is set by `loop approve`.
-	Gate         string `json:"gate,omitempty"`
-	GateApproved string `json:"gate_approved,omitempty"`
+	Gate         string `json:"gate,omitempty" yaml:"gate,omitempty"`
+	GateApproved string `json:"gate_approved,omitempty" yaml:"gate_approved,omitempty"`
 
-	Error    string    `json:"error,omitempty"`
-	Created  time.Time `json:"created"`
-	Updated  time.Time `json:"updated"`
-	NextPoll time.Time `json:"next_poll,omitempty"`
-	Events   []Event   `json:"events,omitempty"`
+	Error    string    `json:"error,omitempty" yaml:"error,omitempty"`
+	Created  time.Time `json:"created" yaml:"created"`
+	Updated  time.Time `json:"updated" yaml:"updated"`
+	NextPoll time.Time `json:"next_poll,omitempty" yaml:"next_poll,omitempty"`
+	Events   []Event   `json:"events,omitempty" yaml:"events,omitempty"`
 
 	dir string
 }
 
 // Session records one agent invocation.
 type Session struct {
-	ID      string    `json:"id"`
-	Kind    string    `json:"kind"` // session, verify, review, ci, conflict, step
-	Started time.Time `json:"started"`
-	Ended   time.Time `json:"ended"`
-	CostUSD float64   `json:"cost_usd,omitempty"`
-	Turns   int       `json:"turns,omitempty"`
-	Error   string    `json:"error,omitempty"`
-	LogFile string    `json:"log_file"`
+	ID      string    `json:"id" yaml:"id"`
+	Kind    string    `json:"kind" yaml:"kind"` // session, verify, review, ci, conflict, step
+	Started time.Time `json:"started" yaml:"started"`
+	Ended   time.Time `json:"ended" yaml:"ended"`
+	CostUSD float64   `json:"cost_usd,omitempty" yaml:"cost_usd,omitempty"`
+	Turns   int       `json:"turns,omitempty" yaml:"turns,omitempty"`
+	Error   string    `json:"error,omitempty" yaml:"error,omitempty"`
+	LogFile string    `json:"log_file" yaml:"log_file"`
 }
 
 // Store manages the runs folder.
@@ -149,31 +150,34 @@ func (s *Store) Create(it *item.Item, runner string) (*Run, error) {
 	return r, s.Save(r)
 }
 
-// Save writes run.json atomically.
+// FileName is the run state file inside the run folder.
+const FileName = "run.yaml"
+
+// Save writes run.yaml atomically.
 func (s *Store) Save(r *Run) error {
 	if r.dir == "" {
 		r.dir = s.Dir(r.ID)
 	}
 	r.Updated = time.Now()
-	b, err := json.MarshalIndent(r, "", "  ")
+	b, err := yaml.Marshal(r)
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(r.dir, "run.json.tmp")
+	tmp := filepath.Join(r.dir, FileName+".tmp")
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(r.dir, "run.json"))
+	return os.Rename(tmp, filepath.Join(r.dir, FileName))
 }
 
 // Load reads one run.
 func (s *Store) Load(id string) (*Run, error) {
-	b, err := os.ReadFile(filepath.Join(s.Dir(id), "run.json"))
+	b, err := os.ReadFile(filepath.Join(s.Dir(id), FileName))
 	if err != nil {
 		return nil, err
 	}
 	r := &Run{}
-	if err := json.Unmarshal(b, r); err != nil {
+	if err := yaml.Unmarshal(b, r); err != nil {
 		return nil, fmt.Errorf("run %s: %w", id, err)
 	}
 	r.dir = s.Dir(id)
