@@ -59,43 +59,14 @@ var headingRe = regexp.MustCompile(`(?m)^#\s+(.+?)\s*$`)
 // Parse splits a markdown document into frontmatter and body.
 func Parse(raw []byte) (*Frontmatter, string, error) {
 	fm := &Frontmatter{}
-	text := string(raw)
-	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
-		return fm, text, nil
-	}
-	rest := text[strings.Index(text, "\n")+1:]
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return fm, text, nil
-	}
-	header := rest[:end]
-	body := rest[end+4:]
-	if i := strings.Index(body, "\n"); i >= 0 {
-		body = body[i+1:]
-	} else {
-		body = ""
+	header, body, has := splitHeader(raw)
+	if !has {
+		return fm, body, nil
 	}
 	if err := yaml.Unmarshal([]byte(header), fm); err != nil {
 		return nil, "", fmt.Errorf("frontmatter: %w", err)
 	}
 	return fm, body, nil
-}
-
-// Render writes frontmatter and body back to a document.
-func Render(fm *Frontmatter, body string) ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString("---\n")
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(fm); err != nil {
-		return nil, err
-	}
-	if err := enc.Close(); err != nil {
-		return nil, err
-	}
-	buf.WriteString("---\n")
-	buf.WriteString(body)
-	return buf.Bytes(), nil
 }
 
 func (s *Source) files() ([]string, error) {
@@ -275,7 +246,32 @@ func (s *Source) Resolve(ref string) (string, bool) {
 	return strings.TrimSuffix(base, filepath.Ext(base)), true
 }
 
-func (s *Source) update(native string, fn func(fm *Frontmatter)) error {
+// splitHeader separates a document into its raw frontmatter text (without
+// the --- fences), the body, and whether a header was present.
+func splitHeader(raw []byte) (header, body string, has bool) {
+	text := string(raw)
+	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
+		return "", text, false
+	}
+	rest := text[strings.Index(text, "\n")+1:]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return "", text, false
+	}
+	header = rest[:end]
+	body = rest[end+4:]
+	if i := strings.Index(body, "\n"); i >= 0 {
+		body = body[i+1:]
+	} else {
+		body = ""
+	}
+	return header, body, true
+}
+
+// edit rewrites the frontmatter of an item through a yaml.Node so that key
+// order, comments and scalar styles (for example an unquoted date) are
+// preserved. changes maps keys to new values; a nil value removes the key.
+func (s *Source) edit(native string, changes map[string]*string) error {
 	p, err := s.pathFor(native)
 	if err != nil {
 		return err
@@ -284,27 +280,87 @@ func (s *Source) update(native string, fn func(fm *Frontmatter)) error {
 	if err != nil {
 		return err
 	}
-	fm, body, err := Parse(raw)
-	if err != nil {
+	header, body, _ := splitHeader(raw)
+	var doc yaml.Node
+	if strings.TrimSpace(header) != "" {
+		if err := yaml.Unmarshal([]byte(header), &doc); err != nil {
+			return fmt.Errorf("%s: frontmatter: %w", p, err)
+		}
+	}
+	m := mappingOf(&doc)
+	for _, key := range sortedKeys(changes) {
+		if v := changes[key]; v == nil {
+			deleteKey(m, key)
+		} else {
+			setKey(m, key, *v)
+		}
+	}
+	var buf bytes.Buffer
+	buf.WriteString("---\n")
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
 		return err
 	}
-	fn(fm)
-	out, err := Render(fm, body)
-	if err != nil {
+	if err := enc.Close(); err != nil {
 		return err
 	}
-	return os.WriteFile(p, out, 0o644)
+	buf.WriteString("---\n")
+	buf.WriteString(body)
+	return os.WriteFile(p, buf.Bytes(), 0o644)
 }
+
+// mappingOf returns the top-level mapping of a document node, creating an
+// empty document and mapping when needed.
+func mappingOf(doc *yaml.Node) *yaml.Node {
+	if doc.Kind == 0 {
+		doc.Kind = yaml.DocumentNode
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		doc.Content = []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}
+	}
+	return doc.Content[0]
+}
+
+func setKey(m *yaml.Node, key, val string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			v := m.Content[i+1]
+			v.Kind, v.Tag, v.Value, v.Style, v.Content = yaml.ScalarNode, "!!str", val, 0, nil
+			return
+		}
+	}
+	m.Content = append(m.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: val})
+}
+
+func deleteKey(m *yaml.Node, key string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content = append(m.Content[:i], m.Content[i+2:]...)
+			return
+		}
+	}
+}
+
+func sortedKeys(m map[string]*string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func str(s string) *string { return &s }
 
 // Claim writes status: in-progress and loop_run into the frontmatter.
 func (s *Source) Claim(ctx context.Context, it *item.Item, runID string) error {
 	if !s.cfg.Claim {
 		return nil
 	}
-	return s.update(it.NativeID, func(fm *Frontmatter) {
-		fm.Status = "in-progress"
-		fm.LoopRun = runID
-	})
+	return s.edit(it.NativeID, map[string]*string{"status": str("in-progress"), "loop_run": str(runID)})
 }
 
 // Release resets the claim.
@@ -312,26 +368,20 @@ func (s *Source) Release(ctx context.Context, it *item.Item) error {
 	if !s.cfg.Claim {
 		return nil
 	}
-	return s.update(it.NativeID, func(fm *Frontmatter) {
-		if fm.Status == "in-progress" {
-			fm.Status = "open"
-		}
-		fm.LoopRun = ""
-	})
+	changes := map[string]*string{"loop_run": nil}
+	if cur, err := s.Get(ctx, it.NativeID); err == nil && cur.InProgress && !cur.Closed {
+		changes["status"] = str("open")
+	}
+	return s.edit(it.NativeID, changes)
 }
 
 // Close sets status: closed.
 func (s *Source) Close(ctx context.Context, it *item.Item, message string) error {
-	return s.update(it.NativeID, func(fm *Frontmatter) {
-		fm.Status = "closed"
-		fm.LoopRun = ""
-		if message != "" {
-			if fm.Rest == nil {
-				fm.Rest = map[string]any{}
-			}
-			fm.Rest["closed_note"] = message
-		}
-	})
+	changes := map[string]*string{"status": str("closed"), "loop_run": nil}
+	if message != "" {
+		changes["closed_note"] = str(message)
+	}
+	return s.edit(it.NativeID, changes)
 }
 
 // Comment appends a log line to the file's "Loop log" section.

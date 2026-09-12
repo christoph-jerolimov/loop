@@ -45,8 +45,10 @@ Common keys:
 Frontmatter keys: `id`, `title`, `status` (`open`, `in-progress`, `closed`),
 `created`, `labels`, `depends_on`, `model`, `loop_run`. Without a title the
 first `# heading` or the file name is used. Claiming writes
-`status: in-progress` and `loop_run`; closing writes `status: closed`.
-Loop notes are appended under a `## Loop log` heading.
+`status: in-progress` and `loop_run`; closing writes `status: closed` and
+`closed_note`. These edits touch only the keys loop owns: every other key
+keeps its position, quoting and comments, and a file without frontmatter
+gets a minimal one. Loop notes are appended under a `## Loop log` heading.
 
 ### `type: github`
 

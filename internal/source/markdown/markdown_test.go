@@ -64,3 +64,63 @@ func TestListClaimClose(t *testing.T) {
 		t.Errorf("body lost on rewrite: %s", raw)
 	}
 }
+
+func TestEditPreservesFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	original := "---\n# planning notes\ntitle: Add auth   # keep this comment\ncreated: 2026-01-02\npriority: 3\nlabels: [ready, auth]\n---\nBody stays.\n\n- list item\n"
+	write(t, dir, "auth.md", original)
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown", Claim: true}, 0, dir)
+	it, err := s.Get(context.Background(), "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Claim(context.Background(), it, "run-7"); err != nil {
+		t.Fatal(err)
+	}
+	got := string(readFile(t, dir, "auth.md"))
+	for _, want := range []string{"# planning notes\n", "title: Add auth # keep this comment\n", "created: 2026-01-02\n", "priority: 3\n", "labels: [ready, auth]\n", "status: in-progress\n", "loop_run: run-7\n", "Body stays.\n\n- list item\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("after claim, missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "title:") > strings.Index(got, "created:") || strings.Index(got, "labels:") > strings.Index(got, "status:") {
+		t.Errorf("key order changed:\n%s", got)
+	}
+	if err := s.Release(context.Background(), it); err != nil {
+		t.Fatal(err)
+	}
+	got = string(readFile(t, dir, "auth.md"))
+	if strings.Contains(got, "loop_run") || !strings.Contains(got, "status: open\n") {
+		t.Errorf("release did not reset the claim:\n%s", got)
+	}
+	if err := s.Close(context.Background(), it, "merged #3"); err != nil {
+		t.Fatal(err)
+	}
+	got = string(readFile(t, dir, "auth.md"))
+	if !strings.Contains(got, "status: closed\n") || !strings.Contains(got, "closed_note: 'merged #3'\n") || !strings.Contains(got, "created: 2026-01-02\n") {
+		t.Errorf("close rewrote the header badly:\n%s", got)
+	}
+}
+
+func TestEditCreatesFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "idea.md", "# Idea\n\nJust a body.\n")
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown", Claim: true}, 0, dir)
+	it, _ := s.Get(context.Background(), "idea")
+	if err := s.Claim(context.Background(), it, "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	got := string(readFile(t, dir, "idea.md"))
+	if !strings.HasPrefix(got, "---\nloop_run: run-1\nstatus: in-progress\n---\n# Idea\n\nJust a body.\n") {
+		t.Errorf("unexpected file:\n%s", got)
+	}
+}
+
+func readFile(t *testing.T, dir, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
