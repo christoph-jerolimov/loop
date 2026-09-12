@@ -36,6 +36,14 @@ Each `fix` round pushes a commit and comments on the PR. Review and CI
 rounds share `workflow.fix_rounds`; when they are used up the run is
 `blocked` with a note on the PR.
 
+Before merging, loop reads the PR's `mergeable_state`. When branch
+protection holds a green PR (`blocked`: required reviewers loop cannot
+satisfy, a required check that never reports, or a "branches must be up to
+date" rule), the run parks as `blocked` with one note on the PR instead of
+retrying every poll. A merge GitHub rejects for another reason is retried
+up to three times, then the run parks the same way. After a human resolves
+the cause, `loop resume <run>` continues to the merge.
+
 `close` runs the source's close action (`close_issue_on_merge: true`), then
 waits until the source reports the item closed. `cleanup` runs
 `steps.cleanup`, then removes the worktree, the local branch and, after a
