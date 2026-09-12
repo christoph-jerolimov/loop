@@ -67,6 +67,24 @@ func New(name string) (Runner, error) {
 	return nil, fmt.Errorf("unknown agent runner %q", name)
 }
 
+// ClaudeSettings renders the permission rules as a Claude Code settings
+// file. loop writes it to <workdir>/.claude/settings.local.json so both
+// the headless session and a human who joins it later get the same rules.
+func ClaudeSettings(mode string, allow, deny []string) ([]byte, error) {
+	perms := map[string]any{"allow": nonNil(allow), "deny": nonNil(deny)}
+	if mode != "" {
+		perms["defaultMode"] = mode
+	}
+	return json.MarshalIndent(map[string]any{"permissions": perms}, "", "  ")
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // NewUUID returns a random v4 UUID.
 func NewUUID() string {
 	b := make([]byte, 16)

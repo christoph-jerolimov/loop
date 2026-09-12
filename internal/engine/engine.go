@@ -334,12 +334,37 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 	if err := e.linkSkills(r); err != nil {
 		return err
 	}
+	if err := e.writeAgentSettings(r); err != nil {
+		return err
+	}
 	if src := e.Sources.ByName(it.Source); src != nil {
 		if err := src.Claim(ctx, it, r.ID); err != nil {
 			return fmt.Errorf("claim: %w", err)
 		}
 	}
 	r.SetPhase(state.PhaseSetup, "")
+	return nil
+}
+
+// writeAgentSettings puts the permission rules into the workdir so a
+// headless Claude session can run tests and commit without prompting.
+func (e *Engine) writeAgentSettings(r *state.Run) error {
+	if e.Cfg.Agent.Runner != "claude" {
+		return nil
+	}
+	b, err := agent.ClaudeSettings(e.Cfg.Agent.PermissionMode, e.Cfg.Agent.Allow, e.Cfg.Agent.Deny)
+	if err != nil {
+		return err
+	}
+	dst := filepath.Join(r.Workdir, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		return err
+	}
+	e.ensureExcluded(r.Workdir, ".claude/settings.local.json")
+	e.logf(r, "wrote %d allow / %d deny permission rules to .claude/settings.local.json", len(e.Cfg.Agent.Allow), len(e.Cfg.Agent.Deny))
 	return nil
 }
 

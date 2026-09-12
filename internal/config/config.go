@@ -83,16 +83,22 @@ type Prompts struct {
 
 // Agent configures the coding agent runner.
 type Agent struct {
-	Runner         string            `yaml:"runner"` // claude | cursor
-	Command        string            `yaml:"command"`
-	Model          string            `yaml:"model"`
-	PermissionMode string            `yaml:"permission_mode"`
-	Timeout        Duration          `yaml:"timeout"`
-	MaxTurns       int               `yaml:"max_turns"`
-	Attempts       int               `yaml:"attempts"`
-	Skills         []string          `yaml:"skills"`
-	Env            map[string]string `yaml:"env"`
-	ExtraArgs      []string          `yaml:"extra_args"`
+	Runner         string `yaml:"runner"` // claude | cursor
+	Command        string `yaml:"command"`
+	Model          string `yaml:"model"`
+	PermissionMode string `yaml:"permission_mode"`
+	// Allow and Deny are Claude Code permission rules written to
+	// <workdir>/.claude/settings.local.json before a session starts, so a
+	// headless session can run the commands it needs without prompting.
+	// Nil means the built-in defaults; an empty list means none.
+	Allow     []string          `yaml:"allow"`
+	Deny      []string          `yaml:"deny"`
+	Timeout   Duration          `yaml:"timeout"`
+	MaxTurns  int               `yaml:"max_turns"`
+	Attempts  int               `yaml:"attempts"`
+	Skills    []string          `yaml:"skills"`
+	Env       map[string]string `yaml:"env"`
+	ExtraArgs []string          `yaml:"extra_args"`
 }
 
 // Step is a shell command (run), a script file relative to loop.yaml
@@ -216,6 +222,22 @@ func (d Duration) MarshalYAML() (any, error) { return time.Duration(d).String(),
 // D returns the time.Duration.
 func (d Duration) D() time.Duration { return time.Duration(d) }
 
+// DefaultAllow lets a headless session inspect and commit its work. Add the
+// project's own test and build commands in loop.yaml (agent.allow).
+var DefaultAllow = []string{
+	"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
+	"Bash(git add:*)", "Bash(git commit:*)", "Bash(git restore:*)", "Bash(git stash:*)",
+	"Bash(git branch:*)", "Bash(git merge:*)", "Bash(git rm:*)", "Bash(git mv:*)",
+}
+
+// DefaultDeny keeps the agent from doing what loop does itself.
+var DefaultDeny = []string{
+	"Bash(git push:*)", "Bash(gh pr:*)", "Bash(gh api:*)", "Bash(git reset --hard:*)",
+}
+
+// PermissionModes accepted by the Claude runner.
+var PermissionModes = []string{"default", "acceptEdits", "bypassPermissions", "plan"}
+
 // Merge policies.
 const (
 	MergeManual           = "manual"
@@ -331,6 +353,12 @@ func (c *Config) ApplyDefaults() {
 	if c.Agent.PermissionMode == "" {
 		c.Agent.PermissionMode = "acceptEdits"
 	}
+	if c.Agent.Allow == nil {
+		c.Agent.Allow = append([]string(nil), DefaultAllow...)
+	}
+	if c.Agent.Deny == nil {
+		c.Agent.Deny = append([]string(nil), DefaultDeny...)
+	}
 	if c.Agent.Timeout == 0 {
 		c.Agent.Timeout = Duration(45 * time.Minute)
 	}
@@ -433,6 +461,15 @@ func (c *Config) Validate() error {
 	case "claude", "cursor":
 	default:
 		errs = append(errs, fmt.Errorf("agent.runner must be claude or cursor, got %q", c.Agent.Runner))
+	}
+	if c.Agent.Runner == "claude" {
+		ok := false
+		for _, m := range PermissionModes {
+			ok = ok || m == c.Agent.PermissionMode
+		}
+		if !ok {
+			errs = append(errs, fmt.Errorf("agent.permission_mode must be one of %s; got %q", strings.Join(PermissionModes, ", "), c.Agent.PermissionMode))
+		}
 	}
 	switch c.Workflow.Merge {
 	case MergeManual, MergeWhenGreen, MergeWhenGreenApprove, MergeGitHubAuto:

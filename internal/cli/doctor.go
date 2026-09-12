@@ -80,6 +80,7 @@ func (d *doctor) run() {
 		agentBin = map[string]string{"claude": "claude", "cursor": "agent"}[cfg.Agent.Runner]
 	}
 	d.checkTool(cfg.Agent.Runner+" runner", agentBin, "--version")
+	d.checkPermissions(cfg)
 
 	fmt.Println("Repository")
 	d.checkRepo(cfg)
@@ -131,6 +132,33 @@ func (d *doctor) checkFiles(cfg *config.Config) {
 		}
 	}
 	d.ok("referenced prompts, scripts and skills exist")
+}
+
+// checkPermissions warns when a headless Claude session could not run the
+// project's checks because no matching Bash rule is allowed.
+func (d *doctor) checkPermissions(cfg *config.Config) {
+	if cfg.Agent.Runner != "claude" {
+		return
+	}
+	if cfg.Agent.PermissionMode == "bypassPermissions" {
+		d.warn("agent.permission_mode is bypassPermissions: the agent can run any command without prompting")
+		return
+	}
+	custom := 0
+	for _, rule := range cfg.Agent.Allow {
+		isDefault := false
+		for _, def := range config.DefaultAllow {
+			isDefault = isDefault || rule == def
+		}
+		if !isDefault {
+			custom++
+		}
+	}
+	if custom == 0 {
+		d.warn("agent.allow has only the default git rules; add the project's test and build commands (for example \"Bash(npm test:*)\") or headless sessions stall on the first denied command")
+		return
+	}
+	d.ok("agent.allow has %d project rule(s) besides the git defaults", custom)
 }
 
 func (d *doctor) checkTool(label, bin string, args ...string) {
