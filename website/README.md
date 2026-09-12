@@ -22,6 +22,8 @@ How the docs section works:
   (`prompts.md`, `examples/session-with-comments.md`) to the site routes.
 - `src/lib/heading-anchors.mjs` appends anchor links to `h2`/`h3` headings;
   the docs page renders an "On this page" outline from the same headings.
+- `@astrojs/sitemap` writes `sitemap-index.xml`; `src/pages/robots.txt.ts`
+  generates a `robots.txt` that points at it under the configured base path.
 
 Rendered docs are cached in `.astro/` and `node_modules/.astro/` between
 builds. After changing a
