@@ -65,6 +65,8 @@ steps:
   before_pr: []              # after verify, before the push
   merged: []                 # after the PR merged
   cleanup: []                # before the workdir is removed
+  blocked: []                # run parked and needs a human (LOOP_RUN_ERROR says why)
+  failed: []                 # run failed; good place for a Slack or mail notification
 
 pr:
   draft: true                # opened as draft, marked ready once CI is green

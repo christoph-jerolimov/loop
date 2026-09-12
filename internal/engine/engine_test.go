@@ -336,7 +336,10 @@ func TestFullLifecycle(t *testing.T) {
 }
 
 func TestMergeBlockedByBranchProtection(t *testing.T) {
-	lc := newLifecycle(t, func(cfg *config.Config) { cfg.Workflow.Merge = config.MergeWhenGreen })
+	lc := newLifecycle(t, func(cfg *config.Config) {
+		cfg.Workflow.Merge = config.MergeWhenGreen
+		cfg.Steps.Blocked = []config.Step{{Name: "notify", Run: `printf '%s|%s|%s' "$LOOP_RUN_PHASE" "$LOOP_PR_URL" "$LOOP_RUN_ERROR" > "$LOOP_RUN_DIR/blocked-hook"`}}
+	})
 	lc.drive(t, state.PhaseMonitor) // PR opened
 	lc.gh.mu.Lock()
 	lc.gh.checks = []map[string]any{{"id": 2, "name": "test", "status": "completed", "conclusion": "success", "html_url": "u"}}
@@ -357,6 +360,10 @@ func TestMergeBlockedByBranchProtection(t *testing.T) {
 	}
 	if !noted {
 		t.Errorf("expected one note on the PR, comments: %v", lc.gh.icomments)
+	}
+	hook, err := os.ReadFile(filepath.Join(lc.run.Dir(), "blocked-hook"))
+	if err != nil || !strings.HasPrefix(string(hook), "blocked|https://gh/o/r/pull/7|merge blocked by branch protection") {
+		t.Errorf("steps.blocked did not run with the run environment: %v %q", err, hook)
 	}
 	// Once a human unblocks it, resume continues to the merge.
 	lc.gh.mu.Lock()

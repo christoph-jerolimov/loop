@@ -129,6 +129,8 @@ Optional keys: `name`, `model` and `timeout` (agent steps).
 | `steps.before_pr` | After verify, before the push. A failure fails the run. |
 | `steps.merged` | After the PR merged. Failures are logged. |
 | `steps.cleanup` | Before the workdir is removed. Failures are logged. |
+| `steps.blocked` | When a run parks because it needs a human: fix rounds used up, branch protection, PR closed, gate declined. Failures are logged. |
+| `steps.failed` | When a run fails: no usable session result, setup or verify error, push or PR creation error. Failures are logged. |
 
 ```yaml
 steps:
@@ -142,12 +144,17 @@ steps:
       agent: prompts/self-review.md
   merged:
     - run: echo "merged $LOOP_PR_URL" >> "$LOOP_PROJECT_DIR/merged.log"
+  blocked:
+    - script: hooks/notify-slack.sh   # reads LOOP_RUN_ERROR and LOOP_PR_URL
+  failed:
+    - script: hooks/notify-slack.sh
 ```
 
 Steps see this environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`,
 `LOOP_WORKDIR`, `LOOP_BRANCH`, `LOOP_BASE`, `LOOP_ITEM_ID`,
 `LOOP_ITEM_TITLE`, `LOOP_ITEM_URL`, `LOOP_RUN_ID`, `LOOP_RUN_DIR`,
-`LOOP_SUMMARY_FILE`, `LOOP_PR_URL`, `LOOP_PR_NUMBER`, plus `agent.env`.
+`LOOP_SUMMARY_FILE`, `LOOP_PR_URL`, `LOOP_PR_NUMBER`, `LOOP_RUN_PHASE`,
+`LOOP_RUN_ERROR` (the reason a run parked), plus `agent.env`.
 
 ## `pr`
 

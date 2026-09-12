@@ -145,11 +145,20 @@ type Steps struct {
 	Merged []Step `yaml:"merged"`
 	// Cleanup runs before the workdir is removed.
 	Cleanup []Step `yaml:"cleanup"`
+	// Blocked runs when a run parks because it needs a human (fix rounds
+	// used up, branch protection, PR closed). Use it to notify someone.
+	Blocked []Step `yaml:"blocked"`
+	// Failed runs when a run fails (no usable session result, setup or
+	// verify errors, push or PR creation errors).
+	Failed []Step `yaml:"failed"`
 }
 
 // All returns every configured step list with its phase name.
 func (s Steps) All() map[string][]Step {
-	return map[string][]Step{"setup": s.Setup, "verify": s.Verify, "before_pr": s.BeforePR, "merged": s.Merged, "cleanup": s.Cleanup}
+	return map[string][]Step{
+		"setup": s.Setup, "verify": s.Verify, "before_pr": s.BeforePR, "merged": s.Merged, "cleanup": s.Cleanup,
+		"blocked": s.Blocked, "failed": s.Failed,
+	}
 }
 
 // PR configures pull request creation.
