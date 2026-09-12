@@ -470,7 +470,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	sess := state.Session{Kind: kind, Started: time.Now(), LogFile: logPath}
 	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name(), modelSuffix(model))
 	res, err := e.Runner.Run(ctx, agent.Options{
-		Workdir: r.Workdir, Prompt: text, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
+		Workdir: r.Workdir, Prompt: text, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
 		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: e.env(r), ExtraArgs: e.Cfg.Agent.ExtraArgs,
 		Command: e.Cfg.Agent.Command, Log: logf, Progress: e.Out,
 	})
