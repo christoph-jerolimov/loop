@@ -30,6 +30,7 @@ type fakeGitHub struct {
 	icomments []map[string]any
 	merged    bool
 	mergeable bool
+	mstate    string
 	readyCall int
 	mergeCall int
 	deleted   []string
@@ -70,6 +71,9 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 		case p == "/repos/o/r/pulls/7" && r.Method == http.MethodGet:
 			f.pr["merged"] = f.merged
 			f.pr["mergeable"] = f.mergeable
+			if f.mstate != "" {
+				f.pr["mergeable_state"] = f.mstate
+			}
 			if f.merged {
 				f.pr["state"] = "closed"
 			}
@@ -130,12 +134,26 @@ printf '## Summary\nAgent did things.\n' >> "$LOOP_SUMMARY_FILE"
 echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"session_id\":\"$sid\"}"
 `
 
-func TestFullLifecycle(t *testing.T) {
+// lifecycle wires a fake remote, a fake agent CLI, a fake GitHub API and
+// an engine for a project with one markdown item.
+type lifecycle struct {
+	root, remote, proj string
+	gh                 *fakeGitHub
+	eng                *Engine
+	run                *state.Run
+	out                strings.Builder
+}
+
+func newLifecycle(t *testing.T, tweak func(cfg *config.Config)) *lifecycle {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
+	lc := &lifecycle{}
 	root := t.TempDir()
+	lc.root = root
 	remote := filepath.Join(root, "remote.git")
+	lc.remote = remote
 	run(t, root, "git", "init", "-q", "--bare", remote)
 	seed := filepath.Join(root, "seed")
 	run(t, root, "git", "clone", "-q", remote, seed)
@@ -153,12 +171,14 @@ func TestFullLifecycle(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	gh := &fakeGitHub{mergeable: true}
+	lc.gh = gh
 	srv := httptest.NewServer(gh.handler(t))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	t.Setenv("GITHUB_API_URL", srv.URL)
 	t.Setenv("GITHUB_TOKEN", "x")
 
 	proj := filepath.Join(root, "proj")
+	lc.proj = proj
 	os.MkdirAll(filepath.Join(proj, "backlog"), 0o755)
 	os.WriteFile(filepath.Join(proj, "backlog", "auth.md"), []byte("---\ntitle: Add auth\n---\nBuild login.\n"), 0o644)
 	os.MkdirAll(filepath.Join(proj, "hooks"), 0o755)
@@ -174,6 +194,9 @@ func TestFullLifecycle(t *testing.T) {
 		Workflow: config.Workflow{Merge: config.MergeWhenGreenApprove, PollInterval: config.Duration(time.Millisecond), Gates: []string{}},
 	}
 	cfg.ApplyDefaults()
+	if tweak != nil {
+		tweak(cfg)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -181,11 +204,11 @@ func TestFullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out strings.Builder
-	eng, err := New(cfg, srcs, &out)
+	eng, err := New(cfg, srcs, &lc.out)
 	if err != nil {
 		t.Fatal(err)
 	}
+	lc.eng = eng
 	ctx := context.Background()
 	it, err := srcs.Resolve(ctx, "auth.md")
 	if err != nil {
@@ -195,17 +218,27 @@ func TestFullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	drive := func(want state.Phase) {
-		t.Helper()
-		if err := eng.Drive(ctx, r); err != nil {
-			t.Fatalf("drive: %v\n%s", err, out.String())
-		}
-		if r.Phase != want {
-			t.Fatalf("phase = %s, want %s (error=%q)\n%s", r.Phase, want, r.Error, out.String())
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+	lc.run = r
+	return lc
+}
 
+// drive advances the run and asserts the phase it parks in.
+func (lc *lifecycle) drive(t *testing.T, want state.Phase) {
+	t.Helper()
+	if err := lc.eng.Drive(context.Background(), lc.run); err != nil {
+		t.Fatalf("drive: %v\n%s", err, lc.out.String())
+	}
+	if lc.run.Phase != want {
+		t.Fatalf("phase = %s, want %s (error=%q)\n%s", lc.run.Phase, want, lc.run.Error, lc.out.String())
+	}
+	time.Sleep(2 * time.Millisecond)
+}
+
+func TestFullLifecycle(t *testing.T) {
+	lc := newLifecycle(t, nil)
+	root, remote, proj, gh, r := lc.root, lc.remote, lc.proj, lc.gh, lc.run
+	drive := func(want state.Phase) { t.Helper(); lc.drive(t, want) }
+	out := &lc.out
 	// checkout → session → verify → PR → monitor (no checks yet: green but not approved)
 	drive(state.PhaseMonitor)
 	if r.PR == nil || r.PR.Number != 7 {
@@ -299,5 +332,41 @@ func TestFullLifecycle(t *testing.T) {
 	if len(r.Sessions) != 3 {
 		t.Errorf("expected 3 agent sessions, got %d", len(r.Sessions))
 	}
-	fmt.Fprint(&out, "")
+	_ = out
+}
+
+func TestMergeBlockedByBranchProtection(t *testing.T) {
+	lc := newLifecycle(t, func(cfg *config.Config) { cfg.Workflow.Merge = config.MergeWhenGreen })
+	lc.drive(t, state.PhaseMonitor) // PR opened
+	lc.gh.mu.Lock()
+	lc.gh.checks = []map[string]any{{"id": 2, "name": "test", "status": "completed", "conclusion": "success", "html_url": "u"}}
+	lc.gh.mstate = "blocked"
+	lc.gh.mu.Unlock()
+	lc.drive(t, state.PhaseBlocked)
+	if lc.gh.mergeCall != 0 {
+		t.Errorf("merge must not be attempted while branch protection blocks it, got %d calls", lc.gh.mergeCall)
+	}
+	if !strings.Contains(lc.run.Error, "branch protection") {
+		t.Errorf("run error = %q", lc.run.Error)
+	}
+	var noted bool
+	for _, c := range lc.gh.icomments {
+		if strings.Contains(c["body"].(string), "branch protection") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Errorf("expected one note on the PR, comments: %v", lc.gh.icomments)
+	}
+	// Once a human unblocks it, resume continues to the merge.
+	lc.gh.mu.Lock()
+	lc.gh.mstate = "clean"
+	lc.gh.mu.Unlock()
+	if err := lc.eng.Resume(lc.run); err != nil {
+		t.Fatal(err)
+	}
+	lc.drive(t, state.PhaseDone)
+	if lc.gh.mergeCall != 1 {
+		t.Errorf("merge calls after resume = %d", lc.gh.mergeCall)
+	}
 }

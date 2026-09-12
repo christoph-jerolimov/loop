@@ -94,6 +94,8 @@ type Run struct {
 	HandledReviews  []int64   `json:"handled_reviews,omitempty" yaml:"handled_reviews,omitempty"`
 	LastPushSHA     string    `json:"last_push_sha,omitempty" yaml:"last_push_sha,omitempty"`
 	LastCIFixSHA    string    `json:"last_ci_fix_sha,omitempty" yaml:"last_ci_fix_sha,omitempty"`
+	// MergeAttempts counts merge calls GitHub rejected as not mergeable.
+	MergeAttempts int `json:"merge_attempts,omitempty" yaml:"merge_attempts,omitempty"`
 
 	// Gate is the gate the run waits at; GateApproved is set by `loop approve`.
 	Gate         string `json:"gate,omitempty" yaml:"gate,omitempty"`

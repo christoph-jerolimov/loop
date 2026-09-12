@@ -478,6 +478,10 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 	return true, nil
 }
 
+// maxMergeAttempts bounds how often a merge rejected by GitHub is retried
+// before the run parks with a note.
+const maxMergeAttempts = 3
+
 func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 	r.SetPhase(state.PhaseMerge, "")
 	if !e.gate(r, config.GateBeforeMerge) {
@@ -487,11 +491,23 @@ func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Branch protection can hold a green, approved PR: required reviewers
+	// loop cannot satisfy, required checks that never report, or a
+	// "require branches to be up to date" rule. GitHub reports that as
+	// mergeable_state "blocked"; there is nothing loop can do about it, so
+	// park the run with one note instead of retrying every poll.
+	if pr, perr := gh.GetPullRequest(ctx, r.PR.Number); perr == nil && pr.MergeableState == "blocked" {
+		return e.blockOrWait(ctx, r, "merge blocked by branch protection (mergeable_state=blocked): it needs reviews, checks or an update loop cannot provide")
+	}
 	e.logf(r, "merging PR #%d (%s)", r.PR.Number, e.Cfg.Workflow.MergeMethod)
 	if err := gh.MergePullRequest(ctx, r.PR.Number, e.Cfg.Workflow.MergeMethod, ""); err != nil {
 		var ge *ghapi.Error
 		if errors.As(err, &ge) && (ge.Status == 405 || ge.Status == 409) {
-			e.logf(r, "not mergeable right now (%s); will retry", ge.Body)
+			r.MergeAttempts++
+			if r.MergeAttempts >= maxMergeAttempts {
+				return e.blockOrWait(ctx, r, "GitHub rejected the merge %d times (%s)", r.MergeAttempts, firstLine(ge.Body))
+			}
+			e.logf(r, "not mergeable right now (%s); will retry (%d/%d)", firstLine(ge.Body), r.MergeAttempts, maxMergeAttempts)
 			r.SetPhase(state.PhaseMonitor, "merge rejected")
 			r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
 			return true, nil
@@ -504,6 +520,14 @@ func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 	}
 	r.SetPhase(state.PhaseClose, "")
 	return false, nil
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // closeItem closes the ticket after the merge and waits until the source
