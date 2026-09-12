@@ -29,6 +29,11 @@ CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
 Windows, `run:` steps need an `sh` on the `PATH` (Git for Windows provides
 one); `script:` and `agent:` steps do not.
 
+Agent sessions get an allowlisted environment: toolchain and agent
+variables pass through, loop's own `GITHUB_TOKEN` and `JIRA_*` credentials
+do not, so an agent cannot push or merge on its own. Name extra variables a
+project needs in `agent.env_passthrough`.
+
 Headless Claude sessions can only run commands the permission rules allow.
 loop writes `agent.allow` and `agent.deny` from `loop.yaml` into the
 workdir before each session (git add and commit allowed, git push denied by

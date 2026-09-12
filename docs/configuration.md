@@ -101,6 +101,7 @@ See [prompts.md](prompts.md).
 | `attempts` | `2` | Attempts for the initial session before the run fails. |
 | `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. The links are kept out of git through the repository's `info/exclude`. |
 | `env` | none | Extra environment variables for sessions and steps. |
+| `env_passthrough` | none | Variable names or globs (`DATABASE_URL`, `MY_APP_*`) sessions inherit from loop's environment on top of the built-in allowlist. See below. |
 | `extra_args` | none | Extra CLI arguments. |
 
 ### Permissions in headless sessions
@@ -133,6 +134,25 @@ quickest way to get a first run going in a sandbox, at the cost of the
 agent being able to run anything. `loop doctor` warns when only the default
 rules are configured. The Cursor runner always runs with `--force`, which
 is Cursor's equivalent of bypassing permissions.
+
+### Environment of a session
+
+Agent sessions do not inherit loop's whole environment. They get an
+allowlist: shell and locale basics, proxy settings, git identity variables,
+the toolchain variables of Go, Node, Rust, Java and Python, the agent CLIs'
+own configuration and credentials (`ANTHROPIC_*`, `CLAUDE_*`, `CURSOR_*`),
+the `LOOP_*` variables and `agent.env`. `GITHUB_TOKEN`, `GH_TOKEN`,
+`JIRA_*` and anything else are withheld, so an agent cannot push, merge or
+comment with loop's credentials. Name what else your project needs in
+`env_passthrough`:
+
+```yaml
+agent:
+  env_passthrough: [DATABASE_URL, "MY_APP_*"]
+```
+
+`run:` and `script:` steps are your own scripts and keep the full
+environment; `agent:` steps are sessions and get the allowlist.
 
 How the prompt reaches the agent: `claude` receives it on standard input
 with a pre-assigned session id. `agent` (Cursor) receives short prompts

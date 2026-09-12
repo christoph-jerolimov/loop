@@ -55,6 +55,7 @@ agent:
   timeout: 45m
   max_turns: 200
   attempts: 2                # retries for the initial session
+  # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN or JIRA_*
   # skills:                  # folders symlinked into <workdir>/.claude/skills
   #   - ~/skills/my-team-conventions
 

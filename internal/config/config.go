@@ -91,14 +91,19 @@ type Agent struct {
 	// <workdir>/.claude/settings.local.json before a session starts, so a
 	// headless session can run the commands it needs without prompting.
 	// Nil means the built-in defaults; an empty list means none.
-	Allow     []string          `yaml:"allow"`
-	Deny      []string          `yaml:"deny"`
-	Timeout   Duration          `yaml:"timeout"`
-	MaxTurns  int               `yaml:"max_turns"`
-	Attempts  int               `yaml:"attempts"`
-	Skills    []string          `yaml:"skills"`
-	Env       map[string]string `yaml:"env"`
-	ExtraArgs []string          `yaml:"extra_args"`
+	Allow    []string          `yaml:"allow"`
+	Deny     []string          `yaml:"deny"`
+	Timeout  Duration          `yaml:"timeout"`
+	MaxTurns int               `yaml:"max_turns"`
+	Attempts int               `yaml:"attempts"`
+	Skills   []string          `yaml:"skills"`
+	Env      map[string]string `yaml:"env"`
+	// EnvPassthrough lists environment variable names or globs (for example
+	// DATABASE_URL, MY_APP_*) that sessions inherit from loop's environment
+	// on top of the built-in allowlist. Credentials such as GITHUB_TOKEN are
+	// never inherited unless listed here.
+	EnvPassthrough []string `yaml:"env_passthrough"`
+	ExtraArgs      []string `yaml:"extra_args"`
 }
 
 // Step is a shell command (run), a script file relative to loop.yaml

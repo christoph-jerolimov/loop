@@ -8,11 +8,13 @@ import (
 	"testing"
 )
 
-// fakeCLI records argv and stdin to files in dir and prints one result event.
+// fakeCLI records argv, environment and stdin to files in its working
+// directory (the session workdir) and prints one result event.
 const fakeCLI = `#!/bin/sh
 if [ "$1" = "create-chat" ]; then echo chat-123; exit 0; fi
-printf '%s\n' "$@" > "$FAKE_DIR/argv"
-cat > "$FAKE_DIR/stdin"
+printf '%s\n' "$@" > argv
+env > env
+cat > stdin
 echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"abc"}'
 `
 
@@ -27,7 +29,6 @@ func setupFake(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_DIR", dir)
 	return dir
 }
 
@@ -98,5 +99,42 @@ func TestClaudeSettings(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("settings missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestSessionEnvWithholdsSecrets(t *testing.T) {
+	dir := setupFake(t, "claude")
+	t.Setenv("GITHUB_TOKEN", "ghp_secret")
+	t.Setenv("JIRA_API_TOKEN", "jira_secret")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-agent")
+	t.Setenv("MY_APP_DB", "postgres://x")
+	t.Setenv("OTHER_SECRET", "nope")
+	_, err := (Claude{}).Run(context.Background(), Options{
+		Workdir: dir, Prompt: "p",
+		Env:            map[string]string{"LOOP_RUN_ID": "r1"},
+		EnvPassthrough: []string{"MY_APP_*"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := read(t, filepath.Join(dir, "env"))
+	for _, absent := range []string{"GITHUB_TOKEN=", "JIRA_API_TOKEN=", "OTHER_SECRET="} {
+		if strings.Contains(env, absent) {
+			t.Errorf("session environment must not contain %s:\n%s", absent, env)
+		}
+	}
+	for _, present := range []string{"PATH=", "HOME=", "ANTHROPIC_API_KEY=sk-ant-agent", "MY_APP_DB=postgres://x", "LOOP_RUN_ID=r1"} {
+		if !strings.Contains(env, present) {
+			t.Errorf("session environment missing %s:\n%s", present, env)
+		}
+	}
+}
+
+func TestSessionEnvExtraWins(t *testing.T) {
+	t.Setenv("HOME", "/inherited")
+	env := SessionEnv(nil, map[string]string{"HOME": "/override"})
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "HOME=/override") || strings.Contains(joined, "HOME=/inherited") {
+		t.Errorf("explicit values must win: %s", joined)
 	}
 }
