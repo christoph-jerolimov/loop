@@ -8,7 +8,8 @@ import { defineMdastPlugin } from 'satteri';
 
 const docsRoot = path.resolve(fileURLToPath(new URL('../../../docs/', import.meta.url)));
 
-export const docLinks = defineMdastPlugin({
+/** @param {string} base The site base path (`/` or `/loop`). */
+export const docLinks = (base = '/') => defineMdastPlugin({
   name: 'loop-doc-links',
   link(node, ctx) {
     if (!ctx.fileURL) return;
@@ -20,6 +21,6 @@ export const docLinks = defineMdastPlugin({
     if (!target.endsWith('.md')) return;
     const dir = path.dirname(path.relative(docsRoot, filePath));
     const slug = path.posix.normalize(path.posix.join(dir === '.' ? '' : dir, target.slice(0, -3)));
-    ctx.setProperty(node, 'url', `/docs/${slug}/${hash ? '#' + hash : ''}`);
+    ctx.setProperty(node, 'url', `${base.replace(/\/$/, '')}/docs/${slug}/${hash ? '#' + hash : ''}`);
   },
 });
