@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -488,4 +489,66 @@ func (c *Client) GetRepository(ctx context.Context) (*Repository, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// getText performs a GET that returns a non-JSON body (log downloads).
+// GitHub answers with a redirect to a signed URL; the client follows it.
+func (c *Client) getText(ctx context.Context, path string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode >= 300 {
+		return "", &Error{Status: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+	}
+	return string(data), nil
+}
+
+// JobLogs downloads the log of one GitHub Actions job.
+func (c *Client) JobLogs(ctx context.Context, jobID int64) (string, error) {
+	return c.getText(ctx, c.repoPath("/actions/jobs/%d/logs", jobID))
+}
+
+var jobURLRe = regexp.MustCompile(`/actions/runs/\d+/jobs?/(\d+)`)
+
+// JobID extracts the Actions job id from a check run. Only checks created
+// by GitHub Actions have one; for other apps it returns 0.
+func (c CheckRun) JobID() int64 {
+	for _, u := range []string{c.HTMLURL, c.DetailsURL} {
+		if m := jobURLRe.FindStringSubmatch(u); m != nil {
+			var id int64
+			if _, err := fmt.Sscan(m[1], &id); err == nil {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
+var (
+	ansiRe      = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+	timestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?`)
+)
+
+// TailLog returns the last n lines of an Actions log with the leading
+// timestamps and ANSI colour codes removed.
+func TailLog(log string, n int) string {
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	for i, l := range lines {
+		l = timestampRe.ReplaceAllString(l, "")
+		lines[i] = strings.TrimRight(ansiRe.ReplaceAllString(l, ""), " \r")
+	}
+	return strings.Join(lines, "\n")
 }

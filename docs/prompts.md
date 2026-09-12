@@ -19,7 +19,7 @@ prints the rendered session prompt for an item.
 | `.Reviews` | `.Author`, `.State`, `.Body`, `.URL` | review |
 | `.ReviewComments` | `.Author`, `.Path`, `.Line`, `.Body`, `.DiffHunk`, `.URL` | review |
 | `.PRComments` | `.Author`, `.Body`, `.Created`, `.URL` | review |
-| `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text` | ci |
+| `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text`, `.Log` (tail of the Actions job log, see `workflow.ci_log_lines`) | ci |
 | `.Conflicts` | list of file paths | conflict |
 | `.VerifyStep`, `.VerifyOutput` | string | verify |
 | `.Summary` | contents of the summary file | pr body |

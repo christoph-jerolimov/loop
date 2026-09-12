@@ -144,7 +144,7 @@ func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState,
 			if url == "" {
 				url = c.DetailsURL
 			}
-			st.Failed = append(st.Failed, prompt.Check{Name: c.Name, Conclusion: c.Conclusion, URL: url, Summary: c.Output.Summary, Text: c.Output.Text})
+			st.Failed = append(st.Failed, prompt.Check{Name: c.Name, Conclusion: c.Conclusion, URL: url, Summary: c.Output.Summary, Text: c.Output.Text, Log: e.jobLog(ctx, gh, c)})
 		}
 	}
 	_, statuses, err := gh.CombinedStatus(ctx, sha)
@@ -163,6 +163,21 @@ func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState,
 		}
 	}
 	return st, nil
+}
+
+// jobLog fetches the tail of a failed GitHub Actions job log. Checks from
+// other apps, disabled log fetching and download errors yield "".
+func (e *Engine) jobLog(ctx context.Context, gh *ghapi.Client, c ghapi.CheckRun) string {
+	n := *e.Cfg.Workflow.CILogLines
+	id := c.JobID()
+	if n <= 0 || id == 0 {
+		return ""
+	}
+	log, err := gh.JobLogs(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return ghapi.TailLog(log, n)
 }
 
 // approved reports whether the latest review of every reviewer is an

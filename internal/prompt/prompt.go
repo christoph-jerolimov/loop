@@ -51,6 +51,8 @@ type Check struct {
 	URL        string
 	Summary    string
 	Text       string
+	// Log is the tail of the GitHub Actions job log, when the check is an Actions job.
+	Log string
 }
 
 // PRRef identifies the pull request.
