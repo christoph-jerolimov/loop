@@ -17,7 +17,9 @@ interface Props { doc: Doc; prev?: Doc; next?: Doc }
 const { doc, prev, next } = Astro.props;
 const title = titleOf(doc);
 const example = isExample(doc);
-const { Content } = example ? { Content: null } : await render(doc);
+const rendered = example ? null : await render(doc);
+const Content = rendered?.Content ?? null;
+const outline = (rendered?.headings ?? []).filter((h) => h.depth === 2 || h.depth === 3);
 ---
 <Base title={`${title} · loop docs`} section="docs">
   <div class="container docs">
@@ -40,5 +42,15 @@ const { Content } = example ? { Content: null } : await render(doc);
         <span>{next && <a href={hrefOf(next)}>{titleOf(next)} →</a>}</span>
       </nav>
     </article>
+    {outline.length > 1 && (
+      <nav class="outline" aria-label="On this page">
+        <h4>On this page</h4>
+        <ul>
+          {outline.map((h) => (
+            <li class={`depth-${h.depth}`}><a href={`#${h.slug}`}>{h.text}</a></li>
+          ))}
+        </ul>
+      </nav>
+    )}
   </div>
 </Base>
