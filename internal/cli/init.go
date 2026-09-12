@@ -18,7 +18,7 @@ var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init [dir]",
-	Short: "Create a loop project: loop.yaml, prompts/, backlog/, hooks and .gitignore",
+	Short: "Create a loop project: loop.yaml, prompts/, backlog/, hooks/ and .gitignore",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -29,10 +29,10 @@ var initCmd = &cobra.Command{
 			return err
 		}
 		files := map[string]string{
-			"loop.yaml":                         "scaffold/loop.yaml",
-			"backlog/example.md":                "scaffold/example.md",
-			".gitignore":                        "scaffold/gitignore",
-			".loop/hooks/setup.d/10-example.sh": "scaffold/setup-hook.sh",
+			"loop.yaml":          "scaffold/loop.yaml",
+			"backlog/example.md": "scaffold/example.md",
+			".gitignore":         "scaffold/gitignore",
+			"hooks/setup.sh":     "scaffold/setup-hook.sh",
 		}
 		for dst, src := range files {
 			b, err := scaffold.ReadFile(src)

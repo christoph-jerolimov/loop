@@ -68,7 +68,7 @@ steps:
 	if err == nil {
 		t.Fatal("expected validation errors")
 	}
-	for _, want := range []string{"jql is required", "unknown type", "agent.runner", "workflow.merge", "unknown gate", "exactly one of run or agent", "repo.github"} {
+	for _, want := range []string{"jql is required", "unknown type", "agent.runner", "workflow.merge", "unknown gate", "exactly one of run, script or agent", "repo.github"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q:\n%v", want, err)
 		}

@@ -154,16 +154,20 @@ func TestFullLifecycle(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("GITHUB_API_URL", srv.URL)
 	t.Setenv("GITHUB_TOKEN", "x")
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
 
 	proj := filepath.Join(root, "proj")
 	os.MkdirAll(filepath.Join(proj, "backlog"), 0o755)
 	os.WriteFile(filepath.Join(proj, "backlog", "auth.md"), []byte("---\ntitle: Add auth\n---\nBuild login.\n"), 0o644)
+	os.MkdirAll(filepath.Join(proj, "hooks"), 0o755)
+	os.WriteFile(filepath.Join(proj, "hooks", "setup.sh"), []byte("#!/bin/sh\necho \"$LOOP_BRANCH\" > \"$LOOP_RUN_DIR/setup-ran\"\n"), 0o755)
 	cfg := &config.Config{
-		Dir:      proj,
-		Repo:     config.Repo{URL: remote, GitHub: "o/r"},
-		Sources:  []config.SourceConfig{{Name: "backlog", Type: "markdown", Path: "backlog", Claim: true}},
-		Steps:    config.Steps{Verify: []config.Step{{Name: "has-feature", Run: "test -f feature.txt"}}},
+		Dir:     proj,
+		Repo:    config.Repo{URL: remote, GitHub: "o/r"},
+		Sources: []config.SourceConfig{{Name: "backlog", Type: "markdown", Path: "backlog", Claim: true}},
+		Steps: config.Steps{
+			Setup:  []config.Step{{Script: "hooks/setup.sh"}},
+			Verify: []config.Step{{Name: "has-feature", Run: "test -f feature.txt"}},
+		},
 		Workflow: config.Workflow{Merge: config.MergeWhenGreenApprove, PollInterval: config.Duration(time.Millisecond), Gates: []string{}},
 	}
 	cfg.ApplyDefaults()
@@ -203,6 +207,12 @@ func TestFullLifecycle(t *testing.T) {
 	drive(state.PhaseMonitor)
 	if r.PR == nil || r.PR.Number != 7 {
 		t.Fatalf("PR not recorded: %+v", r.PR)
+	}
+	if b, err := os.ReadFile(filepath.Join(r.Dir(), "setup-ran")); err != nil || strings.TrimSpace(string(b)) != r.Branch {
+		t.Errorf("setup script did not run in the workdir with loop env: %v %q", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(r.Dir(), "run.yaml")); err != nil {
+		t.Errorf("run.yaml not written: %v", err)
 	}
 	if got := run(t, filepath.Join(proj, "backlog"), "cat", "auth.md"); !strings.Contains(got, "in-progress") {
 		t.Errorf("item not claimed:\n%s", got)

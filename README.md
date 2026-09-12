@@ -24,7 +24,7 @@ CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
 
 ```sh
 mkdir my-service-loop && cd my-service-loop
-loop init                 # loop.yaml, prompts/, backlog/, .loop/hooks/, .gitignore
+loop init                 # loop.yaml, prompts/, backlog/, hooks/, .gitignore
 $EDITOR loop.yaml         # set repo.url and your sources
 $EDITOR backlog/login.md  # write an idea
 loop list                 # items in pick-up order, with blockers
@@ -34,8 +34,10 @@ loop watch                # keep driving open PRs (reviews, CI, merge)
 ```
 
 A loop project is a folder with a `loop.yaml`. Commit it: it is the home of
-your backlog, prompt templates and hooks. `.loop/` holds the base clone,
-per-run worktrees and run logs and is git-ignored (except `.loop/hooks/`).
+your backlog, prompt templates and scripts, and everything loop uses is
+referenced from `loop.yaml`. `.loop/` holds only state (the base clone,
+per-run worktrees and run folders with `run.yaml` and logs) and is
+git-ignored.
 
 ## How one iteration works
 
@@ -45,9 +47,9 @@ per-run worktrees and run logs and is git-ignored (except `.loop/hooks/`).
 2. **Checkout.** A worktree (or clone) is created in `.loop/workdirs/` on a
    branch `loop/<id>-<title>`; an existing name gets a `-2`, `-3` suffix.
    The item is claimed (frontmatter, GitHub label + comment, Jira label).
-3. **Setup.** Global hooks (`~/.config/loop/hooks/setup.d/`), project hooks
-   (`.loop/hooks/setup.d/`) and `steps.setup` run in the workdir. Configured
-   skill folders are symlinked into `.claude/skills/`. The repository's own
+3. **Setup.** The `steps.setup` list from `loop.yaml` runs in the workdir:
+   shell commands, script files from the project folder, or agent sessions.
+   Configured skill folders are symlinked into `.claude/skills/`. The repository's own
    `CLAUDE.md`, `AGENTS.md` or `.cursor/rules` are picked up by the agent as
    usual.
 4. **Session.** The session prompt template is rendered with the item (and
@@ -71,7 +73,7 @@ per-run worktrees and run logs and is git-ignored (except `.loop/hooks/`).
    after the merge (or GitHub does through the closing keyword), then removes
    the worktree and the remote branch.
 
-Every step is idempotent and persisted in `.loop/runs/<run>/run.json`, so a
+Every step is idempotent and persisted in `.loop/runs/<run>/run.yaml`, so a
 crashed `loop watch` simply continues where it stopped. Runs that exhaust
 their fix rounds or hit an unrecoverable error are parked as `blocked` or
 `failed` with a note on the PR or ticket; `loop resume <run>` puts them back.

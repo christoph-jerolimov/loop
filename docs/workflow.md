@@ -35,8 +35,9 @@ rounds share `workflow.fix_rounds`; when they are used up the run is
 `blocked` with a note on the PR.
 
 `close` runs the source's close action (`close_issue_on_merge: true`), then
-waits until the source reports the item closed. `cleanup` removes the
-worktree, the local branch and, after a merge, the remote branch.
+waits until the source reports the item closed. `cleanup` runs
+`steps.cleanup`, then removes the worktree, the local branch and, after a
+merge, the remote branch.
 
 ## Gates
 

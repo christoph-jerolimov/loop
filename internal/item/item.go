@@ -11,40 +11,40 @@ import (
 
 // Comment is a ticket comment.
 type Comment struct {
-	Author  string    `json:"author"`
-	Body    string    `json:"body"`
-	Created time.Time `json:"created"`
-	URL     string    `json:"url,omitempty"`
+	Author  string    `json:"author" yaml:"author"`
+	Body    string    `json:"body" yaml:"body"`
+	Created time.Time `json:"created" yaml:"created"`
+	URL     string    `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 // Item is one backlog entry, independent of where it came from.
 type Item struct {
 	// ID is unique across sources: "<source>:<native id>".
-	ID string `json:"id"`
+	ID string `json:"id" yaml:"id"`
 	// NativeID is the id inside the source: "123", "PROJ-7", "my-idea".
-	NativeID   string `json:"native_id"`
-	Source     string `json:"source"`
-	SourceType string `json:"source_type"`
+	NativeID   string `json:"native_id" yaml:"native_id"`
+	Source     string `json:"source" yaml:"source"`
+	SourceType string `json:"source_type" yaml:"source_type"`
 	// SourceIndex is the position of the source in loop.yaml. Used for ordering.
-	SourceIndex int `json:"source_index"`
+	SourceIndex int `json:"source_index" yaml:"source_index"`
 
-	Title   string    `json:"title"`
-	Body    string    `json:"body"`
-	URL     string    `json:"url,omitempty"`
-	Labels  []string  `json:"labels,omitempty"`
-	Created time.Time `json:"created"`
+	Title   string    `json:"title" yaml:"title"`
+	Body    string    `json:"body" yaml:"body"`
+	URL     string    `json:"url,omitempty" yaml:"url,omitempty"`
+	Labels  []string  `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Created time.Time `json:"created" yaml:"created"`
 
-	Closed     bool   `json:"closed"`
-	InProgress bool   `json:"in_progress"`
-	ClaimedBy  string `json:"claimed_by,omitempty"`
+	Closed     bool   `json:"closed" yaml:"closed"`
+	InProgress bool   `json:"in_progress" yaml:"in_progress"`
+	ClaimedBy  string `json:"claimed_by,omitempty" yaml:"claimed_by,omitempty"`
 
-	Comments []Comment `json:"comments,omitempty"`
+	Comments []Comment `json:"comments,omitempty" yaml:"comments,omitempty"`
 	// DependsOn holds raw references as written by the author.
-	DependsOn []string `json:"depends_on,omitempty"`
+	DependsOn []string `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
 	// Model overrides the agent model for this item.
-	Model string `json:"model,omitempty"`
+	Model string `json:"model,omitempty" yaml:"model,omitempty"`
 	// Extra carries source-specific values, e.g. the GitHub node id.
-	Extra map[string]string `json:"extra,omitempty"`
+	Extra map[string]string `json:"extra,omitempty" yaml:"extra,omitempty"`
 }
 
 // MakeID builds the cross-source item id.
