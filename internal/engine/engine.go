@@ -605,47 +605,73 @@ func (e *Engine) commitLeftovers(ctx context.Context, r *state.Run, msg string) 
 	return nil
 }
 
-// verify runs the verify steps; a failing script triggers a fix session.
+// verify is the phase after the initial session: run the verify steps,
+// then continue to the PR gate.
 func (e *Engine) verify(ctx context.Context, r *state.Run) (bool, error) {
 	r.SetPhase(state.PhaseVerify, "")
-	for _, st := range e.Cfg.Steps.Verify {
-		out, err := e.runStep(ctx, r, st, "verify")
-		if err == nil {
-			continue
-		}
-		if st.Agent != "" {
-			e.abandon(ctx, r, err)
-			return false, err
-		}
-		if r.FixRounds >= e.Cfg.Workflow.FixRounds {
-			e.abandon(ctx, r, fmt.Errorf("verify step still failing after %d fix rounds: %v", r.FixRounds, err))
-			return false, err
-		}
-		r.FixRounds++
-		d := e.data(r)
-		d.VerifyStep = firstNonEmpty(st.Name, st.Run)
-		d.VerifyOutput = out
-		text, rerr := prompt.RenderFile(prompt.TplVerify, e.Cfg.Resolve(e.Cfg.Prompts.Verify), d)
-		if rerr != nil {
-			e.abandon(ctx, r, rerr)
-			return false, rerr
-		}
-		if _, aerr := e.runAgent(ctx, r, "verify-fix", text, "", 0); aerr != nil {
-			e.abandon(ctx, r, aerr)
-			return false, aerr
-		}
-		if cerr := e.commitLeftovers(ctx, r, "loop: fix verification failure"); cerr != nil {
-			e.abandon(ctx, r, cerr)
-			return false, cerr
-		}
-		// Re-run the whole verify list from the start.
-		return false, nil
+	if err := e.runVerify(ctx, r); err != nil {
+		e.abandon(ctx, r, err)
+		return false, err
 	}
 	if !e.gate(r, config.GateBeforePR) {
 		return true, nil
 	}
 	r.SetPhase(state.PhasePR, "")
 	return false, nil
+}
+
+// runVerify runs steps.verify until they all pass. A failing run or
+// script step starts a session with the verify template and then the
+// whole list runs again; each attempt counts as a fix round. It returns
+// an error when a step keeps failing after the rounds are used up, or an
+// agent step fails. It is used after the initial session and after every
+// fix round, so a fix can never push what the initial round would have
+// rejected.
+func (e *Engine) runVerify(ctx context.Context, r *state.Run) error {
+	for {
+		failed, out, err := e.runVerifyOnce(ctx, r)
+		if err != nil {
+			return err
+		}
+		if failed == nil {
+			return nil
+		}
+		if r.FixRounds >= e.Cfg.Workflow.FixRounds {
+			return fmt.Errorf("verify step %q still failing after %d fix rounds", failed.Label(), r.FixRounds)
+		}
+		r.FixRounds++
+		d := e.data(r)
+		d.Round = r.FixRounds
+		d.VerifyStep = failed.Label()
+		d.VerifyOutput = out
+		text, rerr := prompt.RenderFile(prompt.TplVerify, e.Cfg.Resolve(e.Cfg.Prompts.Verify), d)
+		if rerr != nil {
+			return rerr
+		}
+		if _, aerr := e.runAgent(ctx, r, "verify-fix", text, "", 0); aerr != nil {
+			return aerr
+		}
+		if cerr := e.commitLeftovers(ctx, r, "loop: fix verification failure"); cerr != nil {
+			return cerr
+		}
+	}
+}
+
+// runVerifyOnce runs the verify list once. It returns the first failing
+// run/script step with its output, or an error for agent-step failures.
+func (e *Engine) runVerifyOnce(ctx context.Context, r *state.Run) (*config.Step, string, error) {
+	for i := range e.Cfg.Steps.Verify {
+		st := e.Cfg.Steps.Verify[i]
+		out, err := e.runStep(ctx, r, st, "verify")
+		if err == nil {
+			continue
+		}
+		if st.Agent != "" {
+			return nil, "", err
+		}
+		return &st, out, nil
+	}
+	return nil, "", nil
 }
 
 // gate returns true when the run may continue past the named gate.

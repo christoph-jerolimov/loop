@@ -32,7 +32,10 @@ order:
    - `github-auto-merge`: auto-merge was enabled on the PR when it was
      opened; GitHub merges when its rules pass. loop keeps watching.
 
-Each `fix` round pushes a commit and comments on the PR. Review and CI
+Each `fix` round runs `steps.verify` before it pushes, so a fix can never
+push what the initial round would have rejected; a failing verify step
+starts a `verify` session like it does after the initial session. Then
+the round pushes a commit and comments on the PR. Review, CI and verify
 rounds share `workflow.fix_rounds`; when they are used up the run is
 `blocked` with a note on the PR.
 
