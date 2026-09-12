@@ -20,6 +20,21 @@ How the docs section works:
 - `src/lib/doc-links.mjs` rewrites relative links between the markdown files
   (`prompts.md`, `examples/session-with-comments.md`) to the site routes.
 
-To deploy under a sub path (for example GitHub Pages at `/loop/`), set
-`base` in `astro.config.mjs`; every internal link goes through the `href()`
-helper in `src/lib/docs.ts`.
+## Deployment
+
+`.github/workflows/pages.yml` builds the site and publishes it to GitHub
+Pages on every push to `main` that touches `website/`, `docs/` or the
+workflow itself. It reads the site origin and base path from
+`actions/configure-pages`, so the build works for
+`https://<user>.github.io/loop/` and for a custom domain without changes.
+The repository's Pages source must be set to "GitHub Actions" once, under
+Settings → Pages.
+
+Locally the site builds for the root path. To reproduce the Pages build:
+
+```sh
+BASE_PATH=/loop npm run build
+```
+
+Every internal link goes through the `href()` helper in `src/lib/docs.ts`
+and the docs link plugin, so no page needs to know the base path.
