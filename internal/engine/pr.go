@@ -2,9 +2,11 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -254,7 +256,7 @@ func (e *Engine) collectFeedback(ctx context.Context, gh *ghapi.Client, r *state
 			continue
 		}
 		fb.commentIDs = append(fb.commentIDs, c.ID)
-		fb.ReviewComments = append(fb.ReviewComments, prompt.ReviewComment{Author: c.User.Login, Path: c.Path, Line: c.Line, Body: c.Body, DiffHunk: c.DiffHunk, URL: c.HTMLURL})
+		fb.ReviewComments = append(fb.ReviewComments, prompt.ReviewComment{ID: c.ID, Author: c.User.Login, Path: c.Path, Line: c.Line, Body: c.Body, DiffHunk: c.DiffHunk, URL: c.HTMLURL})
 	}
 	ics, err := gh.ListIssueComments(ctx, r.PR.Number)
 	if err != nil {
@@ -459,6 +461,11 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		}
 		d.Reviews, d.ReviewComments = fb.Reviews, fb.ReviewComments
 		tpl, path := prompt.TplReview, e.Cfg.Prompts.Review
+		var repliesFile string
+		if reason == state.FixReview && len(fb.ReviewComments) > 0 {
+			repliesFile = filepath.Join(r.Dir(), fmt.Sprintf("replies-round-%02d.json", r.FixRounds))
+			d.RepliesFile = repliesFile
+		}
 		if reason == state.FixCI {
 			st, cerr := e.ci(ctx, gh, r.PR.HeadSHA)
 			if cerr != nil {
@@ -474,9 +481,14 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		}
 		r.HandledReviews = append(r.HandledReviews, fb.reviewIDs...)
 		r.HandledComments = append(r.HandledComments, fb.commentIDs...)
-		if _, aerr := e.runAgent(ctx, r, string(reason), text, "", 0); aerr != nil {
+		extra := map[string]string{}
+		if repliesFile != "" {
+			extra["LOOP_REPLIES_FILE"] = repliesFile
+		}
+		if _, aerr := e.runAgent(ctx, r, string(reason), text, "", 0, extra); aerr != nil {
 			return e.blockOrWait(ctx, r, "%s fix session failed: %v", reason, aerr)
 		}
+		defer e.answerReviewers(ctx, gh, r, fb.ReviewComments, repliesFile)
 		if cerr := e.commitLeftovers(ctx, r, "loop: address "+string(reason)+" feedback"); cerr != nil {
 			return e.blockOrWait(ctx, r, "%v", cerr)
 		}
@@ -649,6 +661,65 @@ func (e *Engine) Resume(r *state.Run) error {
 
 func itemComment(c ghapi.Comment) item.Comment {
 	return item.Comment{Author: c.User.Login, Body: c.Body, Created: c.CreatedAt, URL: c.HTMLURL}
+}
+
+// reviewReply is one entry of the replies file a review session writes.
+type reviewReply struct {
+	ID       int64  `json:"id"`
+	Reply    string `json:"reply"`
+	Resolved bool   `json:"resolved"`
+}
+
+// answerReviewers replies in every inline thread the round was given and
+// resolves the ones the agent marked done. Comments the agent did not
+// report on get a neutral note pointing at the pushed commit, so no thread
+// is left without an answer. Failures are logged, never fatal.
+func (e *Engine) answerReviewers(ctx context.Context, gh *ghapi.Client, r *state.Run, comments []prompt.ReviewComment, repliesFile string) {
+	if len(comments) == 0 {
+		return
+	}
+	replies := map[int64]reviewReply{}
+	if repliesFile != "" {
+		if b, err := os.ReadFile(repliesFile); err == nil {
+			var list []reviewReply
+			if jerr := json.Unmarshal(b, &list); jerr != nil {
+				e.logf(r, "replies file is not valid JSON, answering threads with a generic note: %v", jerr)
+			}
+			for _, rp := range list {
+				replies[rp.ID] = rp
+			}
+		}
+	}
+	threads, terr := gh.ReviewThreads(ctx, r.PR.Number)
+	if terr != nil {
+		e.logf(r, "review threads: %v", terr)
+	}
+	short := r.LastPushSHA
+	if len(short) > 7 {
+		short = short[:7]
+	}
+	for _, c := range comments {
+		rp, ok := replies[c.ID]
+		body := rp.Reply
+		if !ok || strings.TrimSpace(body) == "" {
+			body = fmt.Sprintf("Looked at this in fix round %d; see %s. The session left no specific note for this thread.", r.FixRounds, short)
+			rp.Resolved = false
+		} else if short != "" {
+			body += fmt.Sprintf(" (round %d, %s)", r.FixRounds, short)
+		}
+		if err := gh.ReplyToReviewComment(ctx, r.PR.Number, c.ID, body+"\n\n"+loopMarker); err != nil {
+			e.logf(r, "reply to comment %d: %v", c.ID, err)
+			continue
+		}
+		if rp.Resolved {
+			if t, found := threads[c.ID]; found && !t.Resolved {
+				if err := gh.ResolveReviewThread(ctx, t.ID); err != nil {
+					e.logf(r, "resolve thread of comment %d: %v", c.ID, err)
+				}
+			}
+		}
+	}
+	e.logf(r, "answered %d review thread(s)", len(comments))
 }
 
 // RemoveWorkdir deletes the run's checkout without touching the remote.
