@@ -1,0 +1,24 @@
+---
+import Base from '../../layouts/Base.astro';
+import DocsSidebar from '../../components/DocsSidebar.astro';
+import { sortedDocs, titleOf, summaryOf, hrefOf, isExample } from '../../lib/docs';
+
+const docs = await sortedDocs();
+---
+<Base title="Documentation · loop" section="docs">
+  <div class="container docs">
+    <DocsSidebar />
+    <article class="prose">
+      <h1>Documentation</h1>
+      <p>Reference material for running loop: how a run moves through its phases, every key in <code>loop.yaml</code>, and how prompt templates shape what the agent sees. These pages are rendered from the <code>docs/</code> folder of the repository.</p>
+      <div class="doc-list">
+        {docs.map((d) => (
+          <a class="doc-card" href={hrefOf(d)}>
+            <h3>{titleOf(d)}{isExample(d) && <span class="doc-meta"> · template</span>}</h3>
+            <p>{isExample(d) ? 'Session prompt template shown as source.' : summaryOf(d)}</p>
+          </a>
+        ))}
+      </div>
+    </article>
+  </div>
+</Base>

@@ -113,6 +113,9 @@ sources. An item is blocked until every referenced item is closed; `loop run
 
 ## Documentation
 
+The same pages are published as a website built from the `website/` folder
+(see [website/README.md](website/README.md)).
+
 - [Configuration reference](docs/configuration.md)
 - [Prompt templates](docs/prompts.md), including session templates
   [with](docs/examples/session-with-comments.md) and

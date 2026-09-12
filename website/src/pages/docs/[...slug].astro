@@ -1,0 +1,44 @@
+---
+import { render } from 'astro:content';
+import { Code } from 'astro:components';
+import Base from '../../layouts/Base.astro';
+import DocsSidebar from '../../components/DocsSidebar.astro';
+import { sortedDocs, titleOf, hrefOf, isExample, type Doc } from '../../lib/docs';
+
+export async function getStaticPaths() {
+  const docs = await sortedDocs();
+  return docs.map((doc, i) => ({
+    params: { slug: doc.id },
+    props: { doc, prev: docs[i - 1], next: docs[i + 1] },
+  }));
+}
+
+interface Props { doc: Doc; prev?: Doc; next?: Doc }
+const { doc, prev, next } = Astro.props;
+const title = titleOf(doc);
+const example = isExample(doc);
+const { Content } = example ? { Content: null } : await render(doc);
+---
+<Base title={`${title} · loop docs`} section="docs">
+  <div class="container docs">
+    <DocsSidebar current={doc.id} />
+    <article class="prose">
+      <p class="doc-meta">docs/{doc.id}.md</p>
+      {example ? (
+        <>
+          <h1>{title}</h1>
+          <p class="callout">
+            This is a session prompt template (Go <code>text/template</code> syntax over markdown). Copy it to <code>prompts/session.md</code> in your loop project or point <code>prompts.session</code> at it. See <a href={hrefOf({ id: 'prompts' } as Doc)}>Prompt templates</a> for the available data.
+          </p>
+          <Code code={doc.body ?? ''} lang="markdown" theme="github-dark-default" />
+        </>
+      ) : (
+        Content && <Content />
+      )}
+      <nav class="doc-nav" aria-label="Pages">
+        <span>{prev && <a href={hrefOf(prev)}>← {titleOf(prev)}</a>}</span>
+        <span>{next && <a href={hrefOf(next)}>{titleOf(next)} →</a>}</span>
+      </nav>
+    </article>
+  </div>
+</Base>
