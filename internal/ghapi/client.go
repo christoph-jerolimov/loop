@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/christoph-jerolimov/loop/internal/httpx"
 )
 
 // Client talks to one repository.
@@ -24,6 +26,8 @@ type Client struct {
 	Token       string
 	BaseURL     string
 	HTTP        *http.Client
+	// Retry governs retries and rate-limit waits; zero means httpx.Default.
+	Retry httpx.Policy
 }
 
 // New creates a client for owner/repo using the token from GITHUB_TOKEN,
@@ -41,7 +45,7 @@ func New(ownerRepo string) (*Client, error) {
 	if base == "" {
 		base = "https://api.github.com"
 	}
-	return &Client{Owner: owner, Repo: repo, Token: tok, BaseURL: strings.TrimRight(base, "/"), HTTP: &http.Client{Timeout: 60 * time.Second}}, nil
+	return &Client{Owner: owner, Repo: repo, Token: tok, BaseURL: strings.TrimRight(base, "/"), HTTP: &http.Client{Timeout: 60 * time.Second}, Retry: httpx.Default}, nil
 }
 
 // Token resolves the GitHub token.
@@ -66,30 +70,43 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("github: HTTP %d: %s", e.Status, e.Body) }
 
+func (c *Client) policy() httpx.Policy {
+	if c.Retry.Attempts == 0 {
+		return httpx.Default
+	}
+	return c.Retry
+}
+
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
+	var payload []byte
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
+		payload = b
 	}
 	u := path
 	if !strings.HasPrefix(path, "http") {
 		u = c.BaseURL + path
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.policy().Do(ctx, c.HTTP, func() (*http.Request, error) {
+		var body io.Reader
+		if payload != nil {
+			body = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, u, body)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		return req, nil
+	})
 	if err != nil {
 		return err
 	}
@@ -495,14 +512,16 @@ func (c *Client) GetRepository(ctx context.Context) (*Repository, error) {
 // getText performs a GET that returns a non-JSON body (log downloads).
 // GitHub answers with a redirect to a signed URL; the client follows it.
 func (c *Client) getText(ctx context.Context, path string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.policy().Do(ctx, c.HTTP, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		return req, nil
+	})
 	if err != nil {
 		return "", err
 	}

@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/christoph-jerolimov/loop/internal/httpx"
 )
 
 // Client talks to one Jira site.
@@ -22,12 +24,14 @@ type Client struct {
 	email   string
 	token   string
 	HTTP    *http.Client
+	// Retry governs retries and rate-limit waits; zero means httpx.Default.
+	Retry httpx.Policy
 }
 
 // New creates a client. Credentials come from JIRA_EMAIL + JIRA_API_TOKEN
 // (basic auth, Jira Cloud) or JIRA_TOKEN (bearer, Jira Server/DC).
 func New(baseURL string) (*Client, error) {
-	c := &Client{BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &http.Client{Timeout: 60 * time.Second}}
+	c := &Client{BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &http.Client{Timeout: 60 * time.Second}, Retry: httpx.Default}
 	c.email = os.Getenv("JIRA_EMAIL")
 	c.token = os.Getenv("JIRA_API_TOKEN")
 	if c.token == "" {
@@ -48,28 +52,38 @@ type Error struct {
 func (e *Error) Error() string { return fmt.Sprintf("jira: HTTP %d: %s", e.Status, e.Body) }
 
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
+	var payload []byte
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
+		payload = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
-	if err != nil {
-		return err
+	policy := c.Retry
+	if policy.Attempts == 0 {
+		policy = httpx.Default
 	}
-	if c.email != "" {
-		req.SetBasicAuth(c.email, c.token)
-	} else {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	req.Header.Set("Accept", "application/json")
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := policy.Do(ctx, c.HTTP, func() (*http.Request, error) {
+		var body io.Reader
+		if payload != nil {
+			body = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
+		if err != nil {
+			return nil, err
+		}
+		if c.email != "" {
+			req.SetBasicAuth(c.email, c.token)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+		req.Header.Set("Accept", "application/json")
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		return req, nil
+	})
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
+	"github.com/christoph-jerolimov/loop/internal/httpx"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/state"
@@ -285,9 +286,10 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 	pr, err := gh.GetPullRequest(ctx, r.PR.Number)
 	if err != nil {
-		e.logf(r, "poll: %v", err)
+		e.pollFailed(r, err)
 		return true, nil
 	}
+	r.PollFailures = 0
 	r.PR.HeadSHA, r.PR.Draft, r.PR.Merged = pr.Head.SHA, pr.Draft, pr.Merged
 	if pr.Merged {
 		e.logf(r, "PR merged")
@@ -312,7 +314,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	// 2. Reviews and comments (anything since the run started that was not handled yet).
 	fb, err := e.collectFeedback(ctx, gh, r, r.Created)
 	if err != nil {
-		e.logf(r, "poll feedback: %v", err)
+		e.pollFailed(r, err)
 		return true, nil
 	}
 	if !fb.empty() {
@@ -326,7 +328,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	// 3. CI.
 	st, err := e.ci(ctx, gh, pr.Head.SHA)
 	if err != nil {
-		e.logf(r, "poll checks: %v", err)
+		e.pollFailed(r, err)
 		return true, nil
 	}
 	if len(st.Failed) > 0 {
@@ -366,6 +368,28 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 	r.SetPhase(state.PhaseMerge, "")
 	return false, nil
+}
+
+// maxPollBackoff caps how far consecutive failures stretch the next poll.
+const maxPollBackoff = 15 * time.Minute
+
+// pollFailed schedules the next poll after an API error: at the rate
+// limit's reset time when the server said so, otherwise with exponential
+// backoff on the poll interval.
+func (e *Engine) pollFailed(r *state.Run, err error) {
+	r.PollFailures++
+	var rl *httpx.RateLimitError
+	if errors.As(err, &rl) {
+		r.NextPoll = rl.ResetAt
+		e.logf(r, "poll: rate limited, next poll at %s", rl.ResetAt.Format("15:04:05"))
+		return
+	}
+	wait := e.Cfg.Workflow.PollInterval.D() << uint(min(r.PollFailures, 8))
+	if wait > maxPollBackoff {
+		wait = maxPollBackoff
+	}
+	r.NextPoll = time.Now().Add(wait)
+	e.logf(r, "poll: %v (failure %d, next poll in %s)", err, r.PollFailures, wait.Round(time.Second))
 }
 
 func (e *Engine) toFix(r *state.Run) (bool, error) {
