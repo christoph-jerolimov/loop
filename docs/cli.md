@@ -87,12 +87,14 @@ push, poll result and error.
 ## `loop approve <run>`
 
 Let a run continue past the gate it is waiting at. It continues on the
-next `loop watch` tick.
+next `loop watch` tick. A collaborator with push access can do the same
+from the pull request with a `/loop approve` comment.
 
 ## `loop resume <run>`
 
 Put a `blocked` or `failed` run back into the workflow: into `monitor`
-when it has a PR, otherwise into a new agent session.
+when it has a PR, otherwise into a new agent session. A `/loop resume`
+comment on the PR from a collaborator with push access does the same.
 
 ## `loop join <run>`
 

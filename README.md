@@ -91,7 +91,8 @@ git-ignored.
 8. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
    `when-green-and-approved`, or leave it to GitHub (`github-auto-merge`).
    Optional gates (`before-pr`, `before-fix`, `before-merge`) pause the run
-   until `loop approve <run>`.
+   until `loop approve <run>`, or until a collaborator comments
+   `/loop approve` on the PR.
 9. **Close.** The item is done when the ticket is closed. loop closes it
    after the merge (or GitHub does through the closing keyword), then removes
    the worktree and the remote branch.

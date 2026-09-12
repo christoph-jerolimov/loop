@@ -205,6 +205,10 @@ type Workflow struct {
 	CILogLines *int `yaml:"ci_log_lines"`
 	// Cleanup removes the workdir once the item is closed.
 	Cleanup *bool `yaml:"cleanup"`
+	// PRCommands lets collaborators with push access drive a run from the
+	// pull request: "/loop approve" releases a gate, "/loop resume" restarts
+	// a blocked run.
+	PRCommands *bool `yaml:"pr_commands"`
 }
 
 // Duration is a yaml-friendly time.Duration.
@@ -417,6 +421,10 @@ func (c *Config) ApplyDefaults() {
 	if c.Workflow.Cleanup == nil {
 		t := true
 		c.Workflow.Cleanup = &t
+	}
+	if c.Workflow.PRCommands == nil {
+		t := true
+		c.Workflow.PRCommands = &t
 	}
 	if c.Workflow.CILogLines == nil {
 		n := 200

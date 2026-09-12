@@ -36,6 +36,8 @@ type fakeGitHub struct {
 	deleted   []string
 	replies   map[int64]string
 	resolved  []string
+	perms     map[string]string
+	reactions map[int64]string
 }
 
 func (f *fakeGitHub) handler(t *testing.T) http.Handler {
@@ -126,6 +128,23 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			f.deleted = append(f.deleted, strings.TrimPrefix(p, "/repos/o/r/git/refs/heads/"))
 			w.WriteHeader(204)
 		case p == "/repos/o/r/pulls/7/requested_reviewers", strings.HasPrefix(p, "/repos/o/r/issues/7/labels"):
+			write(map[string]any{})
+		case strings.HasPrefix(p, "/repos/o/r/collaborators/") && strings.HasSuffix(p, "/permission"):
+			login := strings.TrimSuffix(strings.TrimPrefix(p, "/repos/o/r/collaborators/"), "/permission")
+			perm := f.perms[login]
+			if perm == "" {
+				perm = "none"
+			}
+			write(map[string]any{"permission": perm})
+		case strings.HasPrefix(p, "/repos/o/r/issues/comments/") && strings.HasSuffix(p, "/reactions"):
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			var id int64
+			fmt.Sscanf(strings.TrimPrefix(p, "/repos/o/r/issues/comments/"), "%d/reactions", &id)
+			if f.reactions == nil {
+				f.reactions = map[int64]string{}
+			}
+			f.reactions[id] = in["content"]
 			write(map[string]any{})
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, p)
@@ -412,5 +431,67 @@ func TestMergeBlockedByBranchProtection(t *testing.T) {
 	lc.drive(t, state.PhaseDone)
 	if lc.gh.mergeCall != 1 {
 		t.Errorf("merge calls after resume = %d", lc.gh.mergeCall)
+	}
+}
+
+func TestGateReleasedFromPRComment(t *testing.T) {
+	lc := newLifecycle(t, func(cfg *config.Config) {
+		cfg.Workflow.Merge = config.MergeWhenGreen
+		cfg.Workflow.Gates = []string{config.GateBeforeMerge}
+	})
+	lc.gh.perms = map[string]string{"ann": "write", "eve": "read"}
+	lc.drive(t, state.PhaseMonitor) // PR opened
+	lc.gh.mu.Lock()
+	lc.gh.checks = []map[string]any{{"id": 3, "name": "test", "status": "completed", "conclusion": "success", "html_url": "u"}}
+	lc.gh.mu.Unlock()
+	lc.drive(t, state.PhaseMerge) // green → merge phase, parks at the gate
+	if lc.run.Gate != config.GateBeforeMerge {
+		t.Fatalf("expected the run to wait at the merge gate, gate=%q phase=%s", lc.run.Gate, lc.run.Phase)
+	}
+	var noted bool
+	for _, c := range lc.gh.icomments {
+		noted = noted || strings.Contains(c["body"].(string), "/loop approve")
+	}
+	if !noted {
+		t.Error("expected a note on the PR explaining /loop approve")
+	}
+
+	// A reader's command is ignored, a writer's releases the gate.
+	lc.gh.mu.Lock()
+	lc.gh.icomments = append(lc.gh.icomments,
+		map[string]any{"id": 900, "body": "/loop approve", "user": map[string]any{"login": "eve"}, "created_at": time.Now()},
+		map[string]any{"id": 901, "body": "/LOOP approve\nlooks good", "user": map[string]any{"login": "ann"}, "created_at": time.Now()},
+	)
+	lc.gh.mu.Unlock()
+	lc.run.NextPoll = time.Time{}
+	lc.drive(t, state.PhaseDone)
+	if lc.gh.mergeCall != 1 {
+		t.Errorf("merge calls = %d, want 1", lc.gh.mergeCall)
+	}
+	if lc.gh.reactions[900] != "confused" || lc.gh.reactions[901] != "+1" {
+		t.Errorf("reactions = %v, want eve:confused ann:+1", lc.gh.reactions)
+	}
+}
+
+func TestLoopApproveReleasesMergeGate(t *testing.T) {
+	lc := newLifecycle(t, func(cfg *config.Config) {
+		cfg.Workflow.Merge = config.MergeWhenGreen
+		cfg.Workflow.Gates = []string{config.GateBeforeMerge}
+		f := false
+		cfg.Workflow.PRCommands = &f
+	})
+	lc.drive(t, state.PhaseMonitor)
+	lc.gh.mu.Lock()
+	lc.gh.checks = []map[string]any{{"id": 3, "name": "test", "status": "completed", "conclusion": "success", "html_url": "u"}}
+	lc.gh.mu.Unlock()
+	lc.drive(t, state.PhaseMerge)
+	if lc.run.Gate != config.GateBeforeMerge {
+		t.Fatalf("expected to wait at the merge gate, got gate=%q", lc.run.Gate)
+	}
+	// What `loop approve` does.
+	lc.run.GateApproved = lc.run.Gate
+	lc.drive(t, state.PhaseDone)
+	if lc.gh.mergeCall != 1 {
+		t.Errorf("merge calls = %d, want 1", lc.gh.mergeCall)
 	}
 }

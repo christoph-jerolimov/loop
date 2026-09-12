@@ -237,6 +237,7 @@ Steps see this environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`,
 | `required_checks` | all | Only these check names decide green or red. |
 | `ci_log_lines` | `200` | Lines from the end of a failed GitHub Actions job log passed to the CI fix prompt. `0` disables log fetching. |
 | `cleanup` | `true` | Remove the workdir when the item is closed. |
+| `pr_commands` | `true` | Let collaborators with push access drive a run from the PR: `/loop approve` releases a gate, `/loop resume` restarts a blocked run. |
 
 ## Run state
 
