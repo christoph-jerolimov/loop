@@ -25,7 +25,9 @@ go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 
 Requirements: `git`, one of `claude` (Claude Code CLI) or `agent` (Cursor
 CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
-`JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud) or `JIRA_TOKEN` (Server).
+`JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud) or `JIRA_TOKEN` (Server). On
+Windows, `run:` steps need an `sh` on the `PATH` (Git for Windows provides
+one); `script:` and `agent:` steps do not.
 
 ## Quick start
 
