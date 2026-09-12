@@ -142,6 +142,7 @@ The same pages are published as a website built from the `website/` folder
 ```sh
 make build   # ./bin/loop
 make test
+make lint    # gofmt, go vet, staticcheck
 ```
 
 Releases are built by GoReleaser when a `v*` tag is pushed

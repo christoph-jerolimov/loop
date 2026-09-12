@@ -12,6 +12,7 @@ test:
 lint:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
+	go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
 
 install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/loop
