@@ -480,7 +480,6 @@ func (e *Engine) runStep(ctx context.Context, r *state.Run, st config.Step, phas
 	return res.Output, nil
 }
 
-
 // data builds template data for the run.
 func (e *Engine) data(r *state.Run) *prompt.Data {
 	d := &prompt.Data{
