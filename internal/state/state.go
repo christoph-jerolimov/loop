@@ -94,6 +94,9 @@ type Run struct {
 	HandledReviews  []int64   `json:"handled_reviews,omitempty" yaml:"handled_reviews,omitempty"`
 	LastPushSHA     string    `json:"last_push_sha,omitempty" yaml:"last_push_sha,omitempty"`
 	LastCIFixSHA    string    `json:"last_ci_fix_sha,omitempty" yaml:"last_ci_fix_sha,omitempty"`
+	// PollFailures counts consecutive failed polls; it stretches the next
+	// poll and resets on the first success.
+	PollFailures int `json:"poll_failures,omitempty" yaml:"poll_failures,omitempty"`
 	// MergeAttempts counts merge calls GitHub rejected as not mergeable.
 	MergeAttempts int `json:"merge_attempts,omitempty" yaml:"merge_attempts,omitempty"`
 

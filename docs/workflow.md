@@ -52,6 +52,17 @@ waits until the source reports the item closed. `cleanup` runs
 `steps.cleanup`, then removes the worktree, the local branch and, after a
 merge, the remote branch.
 
+## API errors and rate limits
+
+Every GitHub and Jira call retries network errors, 5xx responses and
+rate-limit responses (429, or 403 with the rate limit exhausted) up to four
+times with exponential backoff and jitter, honouring `Retry-After` and
+`X-RateLimit-Reset`. A rate limit that asks for more than two minutes is
+not waited out inside the call; the run's next poll is scheduled at the
+reset time instead. Other repeated poll failures stretch the poll interval
+exponentially up to fifteen minutes and reset on the first success, so a
+long outage neither hammers the API nor stops the run.
+
 ## Gates
 
 `workflow.gates` lists points where the run parks until a human confirms:
