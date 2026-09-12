@@ -99,6 +99,13 @@ See [prompts.md](prompts.md).
 | `env` | none | Extra environment variables for sessions and steps. |
 | `extra_args` | none | Extra CLI arguments. |
 
+How the prompt reaches the agent: `claude` receives it on standard input
+with a pre-assigned session id. `agent` (Cursor) receives short prompts
+as the positional argument; long ones (over 16 KiB, typical for tickets
+with comment threads) are piped on standard input while the positional
+argument points at the prompt file in the run folder, so the command line
+never exceeds the operating system's argument limit.
+
 ## `steps`
 
 Everything loop runs around a session is a step list in `loop.yaml`. There
