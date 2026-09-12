@@ -86,8 +86,9 @@ git-ignored.
 Every step is idempotent and persisted in `.loop/runs/<run>/run.yaml`, so a
 crashed `loop watch` simply continues where it stopped. Runs that exhaust
 their fix rounds, are held by branch protection, or hit an unrecoverable
-error are parked as `blocked` or `failed` with a note on the PR or ticket;
-`loop resume <run>` puts them back.
+error are parked as `blocked` or `failed` with a note on the PR or ticket,
+and `steps.blocked` or `steps.failed` can notify you; `loop resume <run>`
+puts them back.
 
 ## Commands
 

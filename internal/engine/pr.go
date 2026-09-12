@@ -295,8 +295,8 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return false, nil
 	}
 	if pr.State == "closed" {
-		r.Block("PR was closed without merging")
 		e.release(ctx, r)
+		e.block(ctx, r, "PR was closed without merging")
 		return false, nil
 	}
 
@@ -382,7 +382,7 @@ func (e *Engine) blockOrWait(ctx context.Context, r *state.Run, format string, a
 	if gh, err := e.GitHub(); err == nil {
 		_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %s. Resume with `loop resume %s` after handling it manually.\n\n%s", msg, r.ID, loopMarker))
 	}
-	r.Block(msg)
+	e.block(ctx, r, msg)
 	return false, nil
 }
 

@@ -90,6 +90,8 @@ processes on the same project never drive the same run.
 | `workflow.fix_rounds` | 3 | run `blocked`, note on PR |
 | `workflow.conflict_attempts` | 1 | run `blocked`, note on PR |
 
-`loop resume <run>` clears the error and puts the run back into `monitor`
-(when it has a PR) or `session`. `loop logs <run>` shows what happened,
+Whenever a run parks, `steps.blocked` or `steps.failed` run with
+`LOOP_RUN_ERROR` set to the reason, so a script can post to Slack, send an
+email or open a ticket. `loop resume <run>` clears the error and puts the
+run back into `monitor` (when it has a PR) or `session`. `loop logs <run>` shows what happened,
 and `loop logs <run> --session` the transcript of the last agent session.

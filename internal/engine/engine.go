@@ -235,13 +235,34 @@ func (e *Engine) heavyStep(ctx context.Context, r *state.Run) (bool, error) {
 	return false, nil
 }
 
-// abandon fails the run, releases the claim and leaves a note on the item.
+// abandon fails the run, releases the claim, leaves a note on the item
+// and runs steps.failed.
 func (e *Engine) abandon(ctx context.Context, r *state.Run, err error) {
 	r.Fail(err)
 	e.logf(r, "failed: %v", err)
 	if src := e.Sources.ByName(r.Item.Source); src != nil {
 		_ = src.Comment(ctx, r.Item, fmt.Sprintf("loop run `%s` failed: %v", r.ID, err))
 		_ = src.Release(ctx, r.Item)
+	}
+	e.notify(ctx, r, e.Cfg.Steps.Failed, "failed")
+}
+
+// block parks the run as blocked and runs steps.blocked.
+func (e *Engine) block(ctx context.Context, r *state.Run, reason string) {
+	r.Block(reason)
+	e.notify(ctx, r, e.Cfg.Steps.Blocked, "blocked")
+}
+
+// notify runs notification steps; their failures are logged, never fatal.
+func (e *Engine) notify(ctx context.Context, r *state.Run, steps []config.Step, phase string) {
+	if len(steps) == 0 {
+		return
+	}
+	if r.Workdir == "" {
+		return
+	}
+	if err := e.runSteps(ctx, r, steps, phase); err != nil {
+		e.logf(r, "%s step failed: %v", phase, err)
 	}
 }
 
@@ -259,6 +280,8 @@ func (e *Engine) env(r *state.Run) map[string]string {
 		"LOOP_RUN_ID":       r.ID,
 		"LOOP_RUN_DIR":      r.Dir(),
 		"LOOP_SUMMARY_FILE": r.SummaryFile(),
+		"LOOP_RUN_PHASE":    string(r.Phase),
+		"LOOP_RUN_ERROR":    r.Error,
 	}
 	if r.PR != nil {
 		m["LOOP_PR_URL"] = r.PR.URL
@@ -613,7 +636,7 @@ func (e *Engine) gate(r *state.Run, name string) bool {
 		if e.Gate(r, name) {
 			return true
 		}
-		r.Block("gate " + name + " declined")
+		e.block(context.Background(), r, "gate "+name+" declined")
 		return false
 	}
 	r.Gate = name
