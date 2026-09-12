@@ -132,3 +132,7 @@ The same pages are published as a website built from the `website/` folder
 make build   # ./bin/loop
 make test
 ```
+
+Dependabot opens weekly, grouped update PRs for Go modules, the website's
+npm packages and the GitHub Actions used in the workflows
+(`.github/dependabot.yml`). CI runs on those PRs like on any other.
