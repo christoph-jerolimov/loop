@@ -3,7 +3,7 @@ import { getCollection, type CollectionEntry } from 'astro:content';
 export type Doc = CollectionEntry<'docs'>;
 
 /** Sidebar order for known pages; anything else follows alphabetically. */
-const order = ['cli', 'workflow', 'configuration', 'prompts'];
+const order = ['cli', 'workflow', 'configuration', 'prompts', 'security'];
 
 /** Files under examples/ are prompt templates and are shown as source, not rendered. */
 export const isExample = (doc: Doc) => doc.id.startsWith('examples/');

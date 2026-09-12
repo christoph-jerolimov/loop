@@ -17,6 +17,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/jiraapi"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/source"
+	"github.com/christoph-jerolimov/loop/internal/source/github"
 )
 
 var doctorCmd = &cobra.Command{
@@ -256,6 +257,9 @@ func (d *doctor) checkSources(cfg *config.Config, gh *ghapi.Client) {
 			continue
 		}
 		d.ok("source %s (%s): %d open item(s)", s.Name(), s.Type(), len(items))
+		if g, ok := s.(*github.Source); ok {
+			d.ok("source %s: ticket comments %s", s.Name(), g.CommentsReason(d.ctx))
+		}
 	}
 }
 

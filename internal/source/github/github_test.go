@@ -15,6 +15,7 @@ import (
 // fakeAPI serves the subset of the GitHub issues API the source uses and
 // records mutations.
 type fakeAPI struct {
+	private      bool
 	labelsAdded  []string
 	labelRemoved string
 	comments     []string
@@ -34,6 +35,8 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		write := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 		switch {
+		case r.URL.Path == "/repos/o/r" && r.Method == http.MethodGet:
+			write(map[string]any{"full_name": "o/r", "default_branch": "main", "private": f.private})
 		case r.URL.Path == "/repos/o/r/issues" && r.Method == http.MethodGet:
 			f.listedLabels = r.URL.Query().Get("labels")
 			pr := issue(3, "A pull request", "", "open", "ready")
@@ -77,15 +80,49 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 func newSource(t *testing.T) (*Source, *fakeAPI) {
 	t.Helper()
-	f := &fakeAPI{}
+	tr := true
+	return newSourceWith(t, &tr, false)
+}
+
+// newSourceWith builds a source with an explicit or unset (nil) comments
+// setting against a private or public fake repository.
+func newSourceWith(t *testing.T, comments *bool, private bool) (*Source, *fakeAPI) {
+	t.Helper()
+	f := &fakeAPI{private: private}
 	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
 	t.Setenv("GITHUB_API_URL", srv.URL)
 	t.Setenv("GITHUB_TOKEN", "x")
 	cfg := config.SourceConfig{Name: "gh", Type: "github", Repo: "o/r", Labels: []string{"ready"}, Claim: true, ClaimLabel: "loop:in-progress"}
-	tr := true
-	cfg.Comments = &tr
+	cfg.Comments = comments
 	return New(cfg, 1), f
+}
+
+func TestCommentsDefaultDependsOnVisibility(t *testing.T) {
+	tr, fl := true, false
+	cases := []struct {
+		name     string
+		comments *bool
+		private  bool
+		want     int
+	}{
+		{"unset on a public repository", nil, false, 0},
+		{"unset on a private repository", nil, true, 1},
+		{"explicit true on a public repository", &tr, false, 1},
+		{"explicit false on a private repository", &fl, true, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _ := newSourceWith(t, c.comments, c.private)
+			it, err := s.Get(context.Background(), "12")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(it.Comments) != c.want {
+				t.Errorf("got %d comments, want %d (%s)", len(it.Comments), c.want, s.CommentsReason(context.Background()))
+			}
+		})
+	}
 }
 
 func TestListFiltersAndOrders(t *testing.T) {

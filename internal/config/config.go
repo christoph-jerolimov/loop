@@ -67,7 +67,10 @@ type SourceConfig struct {
 	Labels     []string `yaml:"labels"`
 	Claim      bool     `yaml:"claim"`
 	ClaimLabel string   `yaml:"claim_label"`
-	// Comments controls whether ticket comments are loaded into the prompt data.
+	// Comments controls whether ticket comments are loaded into the prompt
+	// data. Unset means: yes for markdown and Jira; for GitHub only when the
+	// repository is private, because on a public repository anyone can
+	// comment and comments reach the agent verbatim.
 	Comments *bool `yaml:"comments"`
 }
 
@@ -347,7 +350,7 @@ func (c *Config) ApplyDefaults() {
 		if s.Claim && s.ClaimLabel == "" && s.Type != "markdown" {
 			s.ClaimLabel = "loop:in-progress"
 		}
-		if s.Comments == nil {
+		if s.Comments == nil && s.Type != "github" {
 			t := true
 			s.Comments = &t
 		}

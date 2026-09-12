@@ -143,6 +143,7 @@ The same pages are published as a website built from the `website/` folder
 (see [website/README.md](website/README.md)).
 
 - [Command reference](docs/cli.md)
+- [Security](docs/security.md): what the agent can do, and prompt injection from tickets
 - [Configuration reference](docs/configuration.md)
 - [Prompt templates](docs/prompts.md), including session templates
   [with](docs/examples/session-with-comments.md) and
