@@ -83,4 +83,5 @@ processes on the same project never drive the same run.
 | `workflow.conflict_attempts` | 1 | run `blocked`, note on PR |
 
 `loop resume <run>` clears the error and puts the run back into `monitor`
-(when it has a PR) or `session`.
+(when it has a PR) or `session`. `loop logs <run>` shows what happened,
+and `loop logs <run> --session` the transcript of the last agent session.

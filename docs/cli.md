@@ -68,6 +68,18 @@ backlog items whenever capacity is free.
 Active runs with phase, branch, PR and the current note (gate, next poll,
 error). `-a` includes finished runs.
 
+## `loop logs <run>`
+
+Without flags, the run log: every phase change, session start and end,
+push, poll result and error.
+
+| Flag | Meaning |
+| --- | --- |
+| `--session[=N]` | The raw transcript of an agent session instead, by default the latest; `--session=2` selects the second. |
+| `--prompt` | The exact prompt the selected session received. |
+| `-f, --follow` | Keep printing as the file grows; the easiest way to watch a running session. |
+| `-n, --lines N` | Only the last N lines. |
+
 ## `loop approve <run>`
 
 Let a run continue past the gate it is waiting at. It continues on the

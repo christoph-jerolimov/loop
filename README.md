@@ -91,6 +91,7 @@ their fix rounds or hit an unrecoverable error are parked as `blocked` or
 | `loop run --all [-s source]` | Run every ready item, respecting `workflow.concurrency`. |
 | `loop watch [--pick]` | Drive all active runs; with `--pick` also start ready items. |
 | `loop status [-a]` | Runs and phases. |
+| `loop logs <run> [--session] [-f]` | Run log, or an agent session transcript or prompt. |
 | `loop approve <run>` | Continue past a gate. |
 | `loop resume <run>` | Re-activate a blocked or failed run. |
 | `loop join <run>` | Print the command to continue the agent session by hand. |
