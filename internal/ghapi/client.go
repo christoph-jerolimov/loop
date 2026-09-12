@@ -290,9 +290,13 @@ func (c *Client) CreatePullRequest(ctx context.Context, title, body, head, base 
 	return &pr, nil
 }
 
-// FindPullRequestByHead returns the open PR for a branch, if any.
-func (c *Client) FindPullRequestByHead(ctx context.Context, branch string) (*PullRequest, error) {
-	q := url.Values{"state": {"open"}, "head": {c.Owner + ":" + branch}}
+// FindPullRequestByHead returns the open PR for a head, if any. head is
+// "owner:branch"; a bare branch name means a branch of this repository.
+func (c *Client) FindPullRequestByHead(ctx context.Context, head string) (*PullRequest, error) {
+	if !strings.Contains(head, ":") {
+		head = c.Owner + ":" + head
+	}
+	q := url.Values{"state": {"open"}, "head": {head}}
 	var prs []PullRequest
 	if err := c.do(ctx, http.MethodGet, c.repoPath("/pulls")+"?"+q.Encode(), nil, &prs); err != nil {
 		return nil, err

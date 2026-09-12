@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -122,21 +123,45 @@ func init() {
 var watchPick bool
 
 var watchCmd = &cobra.Command{
-	Use:   "watch",
+	Use:   "watch [project-dir...]",
 	Short: "Drive all active runs: poll PRs, run fix rounds, merge, close",
 	Long: `Keeps running until interrupted. With --pick it also starts ready backlog
 items whenever capacity (workflow.concurrency) is free, turning loop into a
-long-running worker.`,
+long-running worker.
+
+Without arguments it watches the current project. With one or more project
+folders it watches all of them at once, prefixing output with the project
+name, so one process can drive every loop project you have:
+
+  loop watch --pick ~/loops/*`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		a, err := load()
-		if err != nil {
-			return err
+		dirs := args
+		if len(dirs) == 0 {
+			dirs = []string{projectDir}
 		}
-		err = a.Engine.Watch(cmd.Context(), engine.WatchOptions{PickNew: watchPick, Force: false})
-		if errors.Is(err, cmd.Context().Err()) {
-			return nil
+		var apps []*app
+		for _, dir := range dirs {
+			a, err := loadDir(dir, len(dirs) > 1)
+			if err != nil {
+				return err
+			}
+			apps = append(apps, a)
 		}
-		return err
+		ctx := cmd.Context()
+		var wg sync.WaitGroup
+		errs := make([]error, len(apps))
+		for i, a := range apps {
+			wg.Add(1)
+			go func(i int, a *app) {
+				defer wg.Done()
+				err := a.Engine.Watch(ctx, engine.WatchOptions{PickNew: watchPick, Force: false})
+				if err != nil && !errors.Is(err, ctx.Err()) {
+					errs[i] = fmt.Errorf("%s: %w", a.Cfg.Name, err)
+				}
+			}(i, a)
+		}
+		wg.Wait()
+		return errors.Join(errs...)
 	},
 }
 

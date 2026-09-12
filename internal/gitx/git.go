@@ -39,25 +39,48 @@ func EnsureBaseClone(ctx context.Context, url, dir, base string) error {
 	return err
 }
 
-// BranchExists reports whether the branch exists locally or on origin.
-func BranchExists(ctx context.Context, repo, branch string) (bool, error) {
+// EnsureRemote adds or updates a named remote.
+func EnsureRemote(ctx context.Context, repo, name, url string) error {
+	if cur, err := Run(ctx, repo, "remote", "get-url", name); err == nil {
+		if cur == url {
+			return nil
+		}
+		_, err = Run(ctx, repo, "remote", "set-url", name, url)
+		return err
+	}
+	_, err := Run(ctx, repo, "remote", "add", name, url)
+	return err
+}
+
+// BranchExists reports whether the branch exists locally or on any of the
+// given remotes (origin when none are given).
+func BranchExists(ctx context.Context, repo, branch string, remotes ...string) (bool, error) {
 	if out, err := Run(ctx, repo, "branch", "--list", branch); err != nil {
 		return false, err
 	} else if out != "" {
 		return true, nil
 	}
-	out, err := Run(ctx, repo, "ls-remote", "--heads", "origin", branch)
-	if err != nil {
-		return false, err
+	if len(remotes) == 0 {
+		remotes = []string{"origin"}
 	}
-	return out != "", nil
+	for _, remote := range remotes {
+		out, err := Run(ctx, repo, "ls-remote", "--heads", remote, branch)
+		if err != nil {
+			return false, err
+		}
+		if out != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
-// UniqueBranch appends -2, -3, ... until the name is free.
-func UniqueBranch(ctx context.Context, repo, want string) (string, error) {
+// UniqueBranch appends -2, -3, ... until the name is free locally and on
+// the given remotes.
+func UniqueBranch(ctx context.Context, repo, want string, remotes ...string) (string, error) {
 	name := want
 	for i := 2; i < 100; i++ {
-		exists, err := BranchExists(ctx, repo, name)
+		exists, err := BranchExists(ctx, repo, name, remotes...)
 		if err != nil {
 			return "", err
 		}
@@ -137,9 +160,9 @@ func AheadOfBase(ctx context.Context, dir, base string) (int, error) {
 	return n, err
 }
 
-// Push pushes the branch and sets upstream.
-func Push(ctx context.Context, dir, branch string) error {
-	_, err := Run(ctx, dir, "push", "-u", "origin", branch)
+// Push pushes the branch to the remote and sets upstream.
+func Push(ctx context.Context, dir, remote, branch string) error {
+	_, err := Run(ctx, dir, "push", "-u", remote, branch)
 	return err
 }
 

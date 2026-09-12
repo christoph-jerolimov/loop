@@ -67,6 +67,8 @@ git-ignored.
    in-progress marker or a running loop are shown but skipped.
 2. **Checkout.** A worktree (or clone) is created in `.loop/workdirs/` on a
    branch `loop/<id>-<title>`; an existing name gets a `-2`, `-3` suffix.
+   Without push access, branches go to a fork (`repo.fork`) and the PR
+   opens from there.
    The item is claimed (frontmatter, GitHub label + comment, Jira label).
 3. **Setup.** The `steps.setup` list from `loop.yaml` runs in the workdir:
    shell commands, script files from the project folder, or agent sessions.
@@ -114,7 +116,7 @@ puts them back.
 | `loop show <item> [--prompt]` | Item details, or the rendered session prompt. |
 | `loop run <item> [--force] [--no-watch]` | Run one item to completion. |
 | `loop run --all [-s source]` | Run every ready item, respecting `workflow.concurrency`. |
-| `loop watch [--pick]` | Drive all active runs; with `--pick` also start ready items. |
+| `loop watch [--pick] [dir...]` | Drive all active runs, of one or several projects; with `--pick` also start ready items. |
 | `loop status [-a]` | Runs and phases. |
 | `loop logs <run> [--session] [-f]` | Run log, or an agent session transcript or prompt. |
 | `loop approve <run>` | Continue past a gate. |

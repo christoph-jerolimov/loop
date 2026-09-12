@@ -33,8 +33,8 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 		e.abandon(ctx, r, err)
 		return false, err
 	}
-	e.logf(r, "pushing %s", r.Branch)
-	if err := gitx.Push(ctx, r.Workdir, r.Branch); err != nil {
+	e.logf(r, "pushing %s to %s", r.Branch, e.pushRemote())
+	if err := gitx.Push(ctx, r.Workdir, e.pushRemote(), r.Branch); err != nil {
 		e.abandon(ctx, r, err)
 		return false, err
 	}
@@ -42,7 +42,7 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 	r.LastPushSHA = sha
 
 	// Reuse an existing PR for the branch (e.g. after a crash).
-	pr, err := gh.FindPullRequestByHead(ctx, r.Branch)
+	pr, err := gh.FindPullRequestByHead(ctx, e.Cfg.Repo.HeadRef(r.Branch))
 	if err != nil {
 		e.abandon(ctx, r, err)
 		return false, err
@@ -76,7 +76,7 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 			body += "\n" + kw + "\n"
 		}
 		body += "\n" + loopMarker + "\n"
-		pr, err = gh.CreatePullRequest(ctx, title, body, r.Branch, e.Cfg.Repo.Base, *e.Cfg.PR.Draft)
+		pr, err = gh.CreatePullRequest(ctx, title, body, e.Cfg.Repo.HeadRef(r.Branch), e.Cfg.Repo.Base, *e.Cfg.PR.Draft)
 		if err != nil {
 			e.abandon(ctx, r, fmt.Errorf("create PR: %w", err))
 			return false, err
@@ -504,7 +504,7 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 	sha, _ := gitx.HeadSHA(ctx, r.Workdir)
 	if sha != r.LastPushSHA {
 		e.logf(r, "pushing %s round %d", reason, r.FixRounds)
-		if err := gitx.Push(ctx, r.Workdir, r.Branch); err != nil {
+		if err := gitx.Push(ctx, r.Workdir, e.pushRemote(), r.Branch); err != nil {
 			return e.blockOrWait(ctx, r, "push failed: %v", err)
 		}
 		r.LastPushSHA = sha
@@ -620,7 +620,7 @@ func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 			_ = os.RemoveAll(r.Workdir)
 		}
 		if *e.Cfg.Workflow.DeleteBranch && r.PR != nil && r.PR.Merged {
-			if gh, err := e.GitHub(); err == nil {
+			if gh, err := e.pushGitHub(); err == nil {
 				_ = gh.DeleteBranch(ctx, r.Branch)
 			}
 		}
@@ -720,6 +720,15 @@ func (e *Engine) answerReviewers(ctx context.Context, gh *ghapi.Client, r *state
 		}
 	}
 	e.logf(r, "answered %d review thread(s)", len(comments))
+}
+
+// pushGitHub returns the API client for the repository branches are
+// pushed to: the fork when configured, otherwise the repository itself.
+func (e *Engine) pushGitHub() (*ghapi.Client, error) {
+	if e.Cfg.Repo.Fork == "" {
+		return e.GitHub()
+	}
+	return ghapi.New(e.Cfg.Repo.Fork)
 }
 
 // RemoveWorkdir deletes the run's checkout without touching the remote.

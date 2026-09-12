@@ -18,6 +18,8 @@ syntax (`45m`, `1h30m`, `90s`).
 | `workdir` | `worktree` | `worktree` keeps one base clone in `.loop/repo` and adds a worktree per run; `clone` makes a full clone per run. |
 | `branch_prefix` | `loop/` | Prefix for run branches. |
 | `github` | derived from `url` | `owner/name` used for the GitHub API. Set it when the URL is not a github.com URL. |
+| `fork` | none | `owner/name` of a fork to push branches to when you have no push access to the repository. Pull requests open from the fork against `github`. |
+| `push_url` | derived from `url` and `fork` | Git URL of the fork; set it when `url` is not a github.com URL. |
 
 Set `GITHUB_API_URL` for GitHub Enterprise.
 

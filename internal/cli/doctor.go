@@ -190,6 +190,13 @@ func (d *doctor) checkRepo(cfg *config.Config) {
 	default:
 		d.ok("%s has branch %s", cfg.Repo.URL, cfg.Repo.Base)
 	}
+	if cfg.Repo.PushURL != "" {
+		if _, err := gitx.Run(ctx, "", "ls-remote", "--heads", cfg.Repo.PushURL); err != nil {
+			d.fail("cannot reach fork %s: %v", cfg.Repo.PushURL, firstLine(err.Error()))
+		} else {
+			d.ok("fork %s is reachable", cfg.Repo.PushURL)
+		}
+	}
 }
 
 func (d *doctor) checkGitHub(cfg *config.Config) *ghapi.Client {
@@ -208,9 +215,25 @@ func (d *doctor) checkGitHub(cfg *config.Config) *ghapi.Client {
 		d.fail("github: cannot read %s as %s: %v", cfg.Repo.GitHub, login, firstLine(err.Error()))
 		return nil
 	}
-	if !repo.Permissions.Push {
-		d.fail("github: %s has no push access to %s (needed to push branches and merge)", login, repo.FullName)
-	} else {
+	switch {
+	case cfg.Repo.Fork != "":
+		d.ok("github: %s can read %s", login, repo.FullName)
+		fork, ferr := ghapi.New(cfg.Repo.Fork)
+		if ferr == nil {
+			if fr, rerr := fork.GetRepository(d.ctx); rerr != nil {
+				d.fail("github: cannot read fork %s: %v", cfg.Repo.Fork, firstLine(rerr.Error()))
+			} else if !fr.Permissions.Push {
+				d.fail("github: %s has no push access to fork %s", login, fr.FullName)
+			} else {
+				d.ok("github: %s can push to fork %s; pull requests open from there against %s", login, fr.FullName, repo.FullName)
+			}
+		}
+		if !repo.Permissions.Push {
+			d.warn("github: no push access to %s, so merge policies other than manual cannot merge", repo.FullName)
+		}
+	case !repo.Permissions.Push:
+		d.fail("github: %s has no push access to %s (needed to push branches and merge); set repo.fork to contribute through a fork", login, repo.FullName)
+	default:
 		d.ok("github: %s can push to %s", login, repo.FullName)
 	}
 	if repo.DefaultBranch != cfg.Repo.Base {
