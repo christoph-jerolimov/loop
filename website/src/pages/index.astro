@@ -110,7 +110,7 @@ loop watch --pick         # long-running worker`;
       <div class="feature"><h3>Bounded fix rounds</h3><p>Review feedback, failing checks (with the job log) and merge conflicts each get their own prompt template and a hard limit. Past it, the run parks with a note on the PR.</p></div>
       <div class="feature"><h3>Merge policies and gates</h3><p><code>manual</code>, <code>when-green</code>, <code>when-green-and-approved</code> or GitHub auto-merge. Pause before the PR, before fixes or before the merge until <code>loop approve</code>.</p></div>
       <div class="feature"><h3>Claude Code or Cursor</h3><p>Sessions run through the official CLIs with your repository's own <code>CLAUDE.md</code>, <code>AGENTS.md</code> or Cursor rules, plus skills you link in.</p></div>
-      <div class="feature"><h3>Inspectable runs</h3><p>Each run keeps its <code>run.yaml</code>, every prompt it sent, every agent transcript and the PR summary. <code>loop status</code> shows where things stand.</p></div>
+      <div class="feature"><h3>Inspectable runs</h3><p>Each run keeps its <code>run.yaml</code>, every prompt it sent, every agent transcript and the PR summary. <code>loop status</code> shows where things stand, <code>loop logs -f</code> follows a session live.</p></div>
     </div>
   </section>
 
