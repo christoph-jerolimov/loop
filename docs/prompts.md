@@ -1,0 +1,59 @@
+# Prompt templates
+
+Templates are Go `text/template` files. `loop init` copies the built-in
+defaults to `prompts/` so you can edit them; `loop show <item> --prompt`
+prints the rendered session prompt for an item.
+
+## Data
+
+| Field | Type | Available in |
+| --- | --- | --- |
+| `.Project` | string | all |
+| `.Item` | item: `.ID`, `.NativeID`, `.Source`, `.Title`, `.Body`, `.URL`, `.Labels`, `.Created`, `.DependsOn`, `.Comments` | all |
+| `.Item.Comments` | list of `.Author`, `.Body`, `.Created`, `.URL` | all (empty when the source sets `comments: false`) |
+| `.Branch`, `.Base`, `.Workdir`, `.RunID` | string | all |
+| `.SummaryFile` | path the agent should write the PR summary to | all |
+| `.Attempt` | attempt number of the initial session | session |
+| `.Round` | fix round number | review, ci, verify |
+| `.PR` | `.Number`, `.URL` | review, ci, conflict |
+| `.Reviews` | `.Author`, `.State`, `.Body`, `.URL` | review |
+| `.ReviewComments` | `.Author`, `.Path`, `.Line`, `.Body`, `.DiffHunk`, `.URL` | review |
+| `.PRComments` | `.Author`, `.Body`, `.Created`, `.URL` | review |
+| `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text` | ci |
+| `.Conflicts` | list of file paths | conflict |
+| `.VerifyStep`, `.VerifyOutput` | string | verify |
+| `.Summary` | contents of the summary file | pr body |
+
+Functions: `quote` (markdown blockquote), `indent n`, `trunc n`, `join`,
+`trim`, `default`.
+
+## Ticket comments: use them or not
+
+Whether the discussion on a ticket reaches the agent is decided by the
+session template, not by code. Two ready-made variants:
+
+- [examples/session-with-comments.md](examples/session-with-comments.md)
+  renders the discussion as a section of the prompt. Use it when your team
+  refines ideas in the ticket thread.
+- [examples/session-without-comments.md](examples/session-without-comments.md)
+  ignores comments entirely. Use it when threads are noisy or contain
+  process chatter you do not want the agent to act on.
+
+Copy one to `prompts/session.md`, or point `prompts.session` at it. If you
+never want comments loaded at all (for example to keep the prompt small),
+set `comments: false` on the source; `.Item.Comments` is then always empty.
+
+The same pattern applies to fix rounds: the review, CI and conflict
+templates receive the feedback as data and decide how to present it.
+
+## Agent steps
+
+`steps.setup` and `steps.verify` entries with `agent: path.md` render that
+file with the same data and run a session with it. Example self-review step:
+
+```
+Review the diff of branch {{ .Branch }} against origin/{{ .Base }} in
+{{ .Workdir }} for "{{ .Item.Title }}". Fix real bugs, missing tests and
+violations of the repository conventions, commit, and append a "Self
+review" section to {{ .SummaryFile }}. Do not push.
+```
