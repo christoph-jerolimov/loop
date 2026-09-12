@@ -263,3 +263,18 @@ func (c *Client) DoTransition(ctx context.Context, key, name string) error {
 
 // BrowseURL is the human URL of an issue.
 func (c *Client) BrowseURL(key string) string { return c.BaseURL + "/browse/" + key }
+
+// Myself returns the display name of the authenticated user.
+func (c *Client) Myself(ctx context.Context) (string, error) {
+	var me struct {
+		DisplayName string `json:"displayName"`
+		Name        string `json:"name"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/rest/api/2/myself", nil, &me); err != nil {
+		return "", err
+	}
+	if me.DisplayName != "" {
+		return me.DisplayName, nil
+	}
+	return me.Name, nil
+}

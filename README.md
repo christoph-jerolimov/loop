@@ -26,6 +26,7 @@ CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
 mkdir my-service-loop && cd my-service-loop
 loop init                 # loop.yaml, prompts/, backlog/, hooks/, .gitignore
 $EDITOR loop.yaml         # set repo.url and your sources
+loop doctor               # config, tools, tokens and sources all good?
 $EDITOR backlog/login.md  # write an idea
 loop list                 # items in pick-up order, with blockers
 loop run login.md         # one item end to end
@@ -83,6 +84,7 @@ their fix rounds or hit an unrecoverable error are parked as `blocked` or
 | Command | What it does |
 | --- | --- |
 | `loop init [dir]` | Scaffold a project. |
+| `loop doctor` | Check config, tools, credentials, repository and sources before running. |
 | `loop list [-s source] [--ready] [--json]` | Open items in pick-up order with status. |
 | `loop show <item> [--prompt]` | Item details, or the rendered session prompt. |
 | `loop run <item> [--force] [--no-watch]` | Run one item to completion. |
@@ -116,6 +118,7 @@ sources. An item is blocked until every referenced item is closed; `loop run
 The same pages are published as a website built from the `website/` folder
 (see [website/README.md](website/README.md)).
 
+- [Command reference](docs/cli.md)
 - [Configuration reference](docs/configuration.md)
 - [Prompt templates](docs/prompts.md), including session templates
   [with](docs/examples/session-with-comments.md) and

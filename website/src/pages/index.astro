@@ -34,6 +34,7 @@ const quickStart = `go install github.com/christoph-jerolimov/loop/cmd/loop@late
 mkdir my-service-loop && cd my-service-loop
 loop init                 # loop.yaml, prompts/, backlog/, hooks/
 $EDITOR loop.yaml         # repo.url and your sources
+loop doctor               # tools, tokens, repo and sources
 $EDITOR backlog/login.md  # write an idea
 
 loop list                 # pick-up order and blockers
@@ -118,7 +119,7 @@ loop watch --pick         # long-running worker`;
       <div class="prose">
         <p class="eyebrow">Quick start</p>
         <h2>Five minutes to the first PR</h2>
-        <p>You need <code>git</code>, the <code>claude</code> or Cursor <code>agent</code> CLI, and a GitHub token. Jira needs an API token as well.</p>
+        <p>You need <code>git</code>, the <code>claude</code> or Cursor <code>agent</code> CLI, and a GitHub token. Jira needs an API token as well. <code>loop doctor</code> checks all of it before the first run.</p>
         <p>Start with <code>merge: manual</code>: loop opens the PR, keeps it green and leaves the merge to you until you trust the workflow.</p>
         <p><a href={href('/docs/workflow/')}>Workflow, gates and merge policies →</a></p>
       </div>
