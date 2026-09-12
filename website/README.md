@@ -8,6 +8,7 @@ Shiki syntax highlighting, so the docs stay in one place.
 ```sh
 npm install
 npm run dev      # http://localhost:4321
+npm run check    # type-check .astro and .ts files (also runs in CI)
 npm run build    # static output in dist/
 ```
 
