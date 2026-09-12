@@ -58,19 +58,25 @@ loop watch --pick         # long-running worker`;
     <div class="terminal" aria-label="Example terminal session">
       <div class="bar"><i></i><i></i><i></i></div>
       <pre><code><span class="prompt">$</span> loop list
-#  ID              TITLE                 STATUS
-1  backlog:auth    Add OAuth login       <span class="ok">ready</span>
-2  gh:142          Rate limit the API    <span class="ok">ready</span>
-3  backlog:search  Search across orgs    <span class="warn">blocked by auth.md</span>
+#  ID              TITLE               STATUS              DEPENDS ON
+1  backlog:auth    Add OAuth login     <span class="ok">ready</span>
+2  gh:142          Rate limit the API  <span class="ok">ready</span>
+3  backlog:search  Search across orgs  <span class="warn">blocked by auth.md</span>  auth.md
 
 <span class="prompt">$</span> loop run auth.md
-<span class="dim">[backlog:auth]</span> creating worktree .loop/workdirs/auth-add-oauth-login
-<span class="dim">[backlog:auth]</span> starting session (claude)
-<span class="dim">[backlog:auth]</span> verify step: npm test
+<span class="dim">[backlog:auth]</span> run 20260912-101500-backlog-auth created for "Add OAuth login"
+<span class="dim">[backlog:auth]</span> creating worktree .loop/workdirs/auth-add-oauth-login on branch loop/auth-add-oauth-login
+<span class="dim">[backlog:auth]</span> starting session session (claude)
+<span class="dim">[backlog:auth]</span> session 6f1c0b2e ended after 12m4s; join with: cd .loop/workdirs/auth-add-oauth-login &amp;&amp; claude --resume 6f1c0b2e
+<span class="dim">[backlog:auth]</span> verify step: tests
+<span class="dim">[backlog:auth]</span> pushing loop/auth-add-oauth-login
 <span class="dim">[backlog:auth]</span> opened PR https://github.com/acme/my-service/pull/318
-<span class="dim">[backlog:auth]</span> CI red → pushing ci round 1
+<span class="dim">[backlog:auth]</span> starting ci session (claude)
+<span class="dim">[backlog:auth]</span> pushing ci round 1
 <span class="dim">[backlog:auth]</span> CI green, marking PR ready for review
 <span class="dim">[backlog:auth]</span> merging PR #318 (squash)
+<span class="dim">[backlog:auth]</span> PR merged
+<span class="dim">[backlog:auth]</span> removing workdir .loop/workdirs/auth-add-oauth-login
 <span class="dim">[backlog:auth]</span> <span class="ok">done</span></code></pre>
     </div>
   </section>
