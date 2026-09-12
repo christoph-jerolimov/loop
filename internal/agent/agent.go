@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -26,7 +25,11 @@ type Options struct {
 	PermissionMode string
 	MaxTurns       int
 	Timeout        time.Duration
-	Env            map[string]string
+	// Env holds explicit variables for the session (LOOP_* plus agent.env).
+	Env map[string]string
+	// EnvPassthrough lists additional variable names or globs to inherit
+	// from loop's own environment on top of the built-in allowlist.
+	EnvPassthrough []string
 	ExtraArgs      []string
 	// Command overrides the executable name.
 	Command string
@@ -118,10 +121,7 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = o.Workdir
-	cmd.Env = os.Environ()
-	for k, v := range o.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = SessionEnv(o.EnvPassthrough, o.Env)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -310,6 +310,7 @@ func (Cursor) Run(ctx context.Context, o Options) (*Result, error) {
 	res := &Result{}
 	create := exec.CommandContext(ctx, name, "create-chat")
 	create.Dir = o.Workdir
+	create.Env = SessionEnv(o.EnvPassthrough, o.Env)
 	if out, err := create.Output(); err == nil {
 		res.SessionID = strings.TrimSpace(string(out))
 	}
