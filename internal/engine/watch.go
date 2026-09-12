@@ -61,6 +61,7 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 		if err != nil {
 			return err
 		}
+		e.resumeFromPR(ctx, only)
 		active, parked := 0, 0
 		for _, r := range runs {
 			if len(only) > 0 && !only[r.ID] {
@@ -69,7 +70,11 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			active++
 			if r.Gate != "" && r.GateApproved != r.Gate {
 				parked++
-				continue
+				if !e.checkPRCommands(ctx, r) {
+					_ = e.Store.Save(r)
+					continue
+				}
+				_ = e.Store.Save(r)
 			}
 			if !r.NextPoll.IsZero() && time.Now().Before(r.NextPoll) && (r.Phase == state.PhaseMonitor || r.Phase == state.PhaseClose) {
 				continue
@@ -108,6 +113,23 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			wg.Wait()
 			return ctx.Err()
 		case <-time.After(o.Tick):
+		}
+	}
+}
+
+// resumeFromPR gives blocked runs that have a PR a chance to be resumed
+// by a "/loop resume" comment.
+func (e *Engine) resumeFromPR(ctx context.Context, only map[string]bool) {
+	all, err := e.Store.List()
+	if err != nil {
+		return
+	}
+	for _, r := range all {
+		if r.Phase != state.PhaseBlocked || r.PR == nil || (len(only) > 0 && !only[r.ID]) {
+			continue
+		}
+		if e.checkPRCommands(ctx, r) || r.PollFailures > 0 {
+			_ = e.Store.Save(r)
 		}
 	}
 }

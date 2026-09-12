@@ -74,9 +74,18 @@ long outage neither hammers the API nor stops the run.
 - `before-merge`: before loop merges (only meaningful for the merge
   policies that merge).
 
-`loop run` on a terminal asks interactively. Otherwise the run waits and
-`loop status` shows the gate; `loop approve <run>` lets it continue on the
-next `loop watch` tick.
+`loop run` on a terminal asks interactively. Otherwise the run waits,
+`loop status` shows the gate, and loop leaves a note on the PR. Two ways
+to continue:
+
+- `loop approve <run>` where loop runs.
+- A comment `/loop approve` on the pull request from a collaborator with
+  push access (admin, maintain or write). loop reacts with a thumbs up
+  and continues on the next poll; commands from anyone else get a
+  "confused" reaction and are ignored.
+
+A blocked run with a PR can likewise be restarted with a `/loop resume`
+comment. `workflow.pr_commands: false` turns both commands off.
 
 ## Before the first run
 

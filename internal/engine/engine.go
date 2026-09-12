@@ -184,10 +184,13 @@ func (e *Engine) Step(ctx context.Context, r *state.Run) (wait bool, err error) 
 			r.Fail(err)
 		}
 	}()
-	if r.Gate != "" {
-		if r.GateApproved == r.Gate {
-			r.Gate, r.GateApproved = "", ""
-		} else {
+	// A parked run waits until its gate is approved (loop approve, an
+	// interactive answer, or a PR comment). The approval is consumed by
+	// gate() when the phase reaches the gate again, so the phase handler
+	// re-runs and continues past it.
+	if r.Gate != "" && r.GateApproved != r.Gate {
+		e.checkPRCommands(ctx, r)
+		if r.GateApproved != r.Gate {
 			return true, nil
 		}
 	}
@@ -689,6 +692,8 @@ func (e *Engine) gate(r *state.Run, name string) bool {
 		return false
 	}
 	r.Gate = name
+	r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
 	e.logf(r, "waiting at gate %s; continue with: loop approve %s", name, r.ID)
+	e.gateNote(context.Background(), r, name)
 	return false
 }

@@ -406,7 +406,7 @@ func (e *Engine) toFix(r *state.Run) (bool, error) {
 func (e *Engine) blockOrWait(ctx context.Context, r *state.Run, format string, a ...any) (bool, error) {
 	msg := fmt.Sprintf(format, a...)
 	if gh, err := e.GitHub(); err == nil {
-		_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %s. Resume with `loop resume %s` after handling it manually.\n\n%s", msg, r.ID, loopMarker))
+		_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %s. After handling it, a collaborator with push access can comment `%s`, or run `loop resume %s` where loop runs.\n\n%s", msg, cmdResume, r.ID, loopMarker))
 	}
 	e.block(ctx, r, msg)
 	return false, nil

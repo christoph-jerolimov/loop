@@ -437,6 +437,42 @@ func (c *Client) graphqlURL() string {
 	return strings.TrimSuffix(c.BaseURL, "/api/v3") + "/graphql"
 }
 
+// CollaboratorPermission returns the permission level of a user on the
+// repository: admin, maintain, write, triage, read or none.
+func (c *Client) CollaboratorPermission(ctx context.Context, login string) (string, error) {
+	var resp struct {
+		Permission string `json:"permission"`
+		RoleName   string `json:"role_name"`
+	}
+	err := c.do(ctx, http.MethodGet, c.repoPath("/collaborators/%s/permission", url.PathEscape(login)), nil, &resp)
+	var ge *Error
+	if errors.As(err, &ge) && ge.Status == 404 {
+		return "none", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if resp.RoleName != "" {
+		return resp.RoleName, nil
+	}
+	return resp.Permission, nil
+}
+
+// CanPush reports whether a permission level allows pushing.
+func CanPush(permission string) bool {
+	switch permission {
+	case "admin", "maintain", "write":
+		return true
+	}
+	return false
+}
+
+// ReactToComment adds a reaction (+1, -1, eyes, confused, ...) to an issue
+// or PR comment.
+func (c *Client) ReactToComment(ctx context.Context, commentID int64, content string) error {
+	return c.do(ctx, http.MethodPost, c.repoPath("/issues/comments/%d/reactions", commentID), map[string]string{"content": content}, nil)
+}
+
 // CheckRun is one check on a commit.
 type CheckRun struct {
 	ID         int64  `json:"id"`
