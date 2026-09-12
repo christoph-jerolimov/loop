@@ -12,9 +12,16 @@ backlog ──▶ checkout ──▶ agent session ──▶ verify ──▶ PR
 
 ## Install
 
+Download the binary for your platform from the
+[releases page](https://github.com/christoph-jerolimov/loop/releases)
+(Linux, macOS and Windows, amd64 and arm64) and put it on your `PATH`, or
+build from source:
+
 ```sh
 go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 ```
+
+`loop --version` prints the release version.
 
 Requirements: `git`, one of `claude` (Claude Code CLI) or `agent` (Cursor
 CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
@@ -133,6 +140,8 @@ make build   # ./bin/loop
 make test
 ```
 
-Dependabot opens weekly, grouped update PRs for Go modules, the website's
+Releases are built by GoReleaser when a `v*` tag is pushed
+(`.github/workflows/release.yml`); `make build` stamps the version from
+`git describe`. Dependabot opens weekly, grouped update PRs for Go modules, the website's
 npm packages and the GitHub Actions used in the workflows
 (`.github/dependabot.yml`). CI runs on those PRs like on any other.

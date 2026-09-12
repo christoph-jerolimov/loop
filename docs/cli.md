@@ -6,6 +6,10 @@ understands: `login.md`, `#12`, `owner/repo#12`, `PROJ-7`, a ticket URL, or
 the full id `backlog:login`. Runs are addressed by run id, a unique prefix
 of it, or the item id.
 
+## `loop --version`
+
+Prints the release version (`dev` for source builds without `make`).
+
 ## `loop init [dir]`
 
 Scaffold a project: `loop.yaml`, `prompts/` with the built-in templates,

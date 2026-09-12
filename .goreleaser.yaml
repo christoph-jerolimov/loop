@@ -1,0 +1,52 @@
+# GoReleaser configuration. Run on tags v* by .github/workflows/release.yml.
+version: 2
+
+project_name: loop
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: loop
+    main: ./cmd/loop
+    binary: loop
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/christoph-jerolimov/loop/internal/cli.Version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs"
+      - "^website"
+      - "^ci"
+      - "^chore"
+
+release:
+  github:
+    owner: christoph-jerolimov
+    name: loop
+  draft: false
+  prerelease: auto
