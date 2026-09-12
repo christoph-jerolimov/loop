@@ -64,8 +64,8 @@ git-ignored.
    linked to the ticket (`Closes #n` for GitHub issues).
 7. **Monitor.** The PR is polled. A merge conflict is merged with git or, if
    that fails, by an agent session. New review comments or a red CI start a
-   fix session driven by the review or CI prompt template and the result is
-   pushed. Once CI is green a draft PR is marked ready for review.
+   fix session driven by the review or CI prompt template, with the failing
+   job's log included, and the result is pushed. Once CI is green a draft PR is marked ready for review.
 8. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
    `when-green-and-approved`, or leave it to GitHub (`github-auto-merge`).
    Optional gates (`before-pr`, `before-fix`, `before-merge`) pause the run

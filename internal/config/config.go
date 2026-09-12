@@ -177,6 +177,9 @@ type Workflow struct {
 	Concurrency       int      `yaml:"concurrency"`
 	// RequiredChecks: when set, only these check names must be green.
 	RequiredChecks []string `yaml:"required_checks"`
+	// CILogLines is how many lines from the end of a failed Actions job log
+	// are passed to the CI fix prompt. 0 disables log fetching.
+	CILogLines *int `yaml:"ci_log_lines"`
 	// Cleanup removes the workdir once the item is closed.
 	Cleanup *bool `yaml:"cleanup"`
 }
@@ -369,6 +372,10 @@ func (c *Config) ApplyDefaults() {
 	if c.Workflow.Cleanup == nil {
 		t := true
 		c.Workflow.Cleanup = &t
+	}
+	if c.Workflow.CILogLines == nil {
+		n := 200
+		c.Workflow.CILogLines = &n
 	}
 	if c.Workflow.Gates == nil && c.Workflow.Merge != MergeManual {
 		c.Workflow.Gates = []string{GateBeforeMerge}

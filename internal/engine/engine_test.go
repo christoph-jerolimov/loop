@@ -85,6 +85,9 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			f.icomments = append(f.icomments, map[string]any{"id": len(f.icomments) + 100, "body": in["body"], "user": map[string]any{"login": "loop-bot"}, "created_at": time.Now()})
 			write(map[string]any{})
+		case p == "/repos/o/r/actions/jobs/1/logs":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "2026-09-12T16:44:04.0000000Z ##[group]Run go test\n2026-09-12T16:44:05.0000000Z --- FAIL: TestThing (0.00s)\n2026-09-12T16:44:06.0000000Z FAIL\tpkg\n")
 		case strings.HasPrefix(p, "/repos/o/r/commits/") && strings.HasSuffix(p, "/check-runs"):
 			write(map[string]any{"total_count": len(f.checks), "check_runs": f.checks})
 		case strings.HasPrefix(p, "/repos/o/r/commits/") && strings.HasSuffix(p, "/status"):
@@ -229,7 +232,7 @@ func TestFullLifecycle(t *testing.T) {
 
 	// Red CI → fix round → push.
 	gh.mu.Lock()
-	gh.checks = []map[string]any{{"id": 1, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "u", "output": map[string]any{"summary": "boom"}}}
+	gh.checks = []map[string]any{{"id": 1, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "https://gh/o/r/actions/runs/9/job/1", "output": map[string]any{"summary": "boom"}}}
 	gh.mu.Unlock()
 	drive(state.PhaseMonitor)
 	if r.FixRounds != 1 || r.LastCIFixSHA == "" {
@@ -237,6 +240,14 @@ func TestFullLifecycle(t *testing.T) {
 	}
 	if run(t, root, "git", "--git-dir", remote, "rev-list", "--count", r.Branch) != "3" {
 		t.Error("CI fix was not pushed")
+	}
+	ciPrompts, _ := filepath.Glob(filepath.Join(r.Dir(), "session-*-ci.prompt.md"))
+	if len(ciPrompts) != 1 {
+		t.Fatalf("ci prompt not written: %v", ciPrompts)
+	}
+	cp, _ := os.ReadFile(ciPrompts[0])
+	if !strings.Contains(string(cp), "--- FAIL: TestThing") || strings.Contains(string(cp), "2026-09-12T16:44:04") {
+		t.Errorf("ci prompt should contain the job log tail without timestamps:\n%s", cp)
 	}
 	// Same head still red → nothing happens.
 	drive(state.PhaseMonitor)

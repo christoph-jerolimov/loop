@@ -9,6 +9,10 @@ CI is failing on pull request {{ .PR.URL }} for "{{ .Item.Title }}". Find the ro
 {{ if .Text }}```
 {{ trunc 8000 .Text }}
 ```{{ end }}
+{{ if .Log }}Last lines of the job log:
+```
+{{ .Log }}
+```{{ end }}
 {{ end }}
 ## Rules
 

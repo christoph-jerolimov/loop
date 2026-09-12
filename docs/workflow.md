@@ -20,7 +20,9 @@ order:
    with the `review` template. Handled comment ids are remembered, so the
    same comment never triggers twice.
 4. **Red CI** on the current head → `fix` with the `ci` template, once per
-   head commit.
+   head commit. For checks that are GitHub Actions jobs, the last
+   `workflow.ci_log_lines` lines of the job log are part of the prompt, with
+   timestamps and colour codes stripped.
 5. **Pending CI** → wait.
 6. **Green**: a draft PR is marked ready for review. Then, by policy:
    - `manual`: keep watching until a human merges.

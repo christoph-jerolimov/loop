@@ -166,6 +166,7 @@ Steps see this environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`,
 | `gates` | `[]` (`[before-merge]` for auto merge policies) | Pause points: `before-pr`, `before-fix`, `before-merge`. |
 | `concurrency` | `1` | Runs in an agent, verify or fix phase at the same time. |
 | `required_checks` | all | Only these check names decide green or red. |
+| `ci_log_lines` | `200` | Lines from the end of a failed GitHub Actions job log passed to the CI fix prompt. `0` disables log fetching. |
 | `cleanup` | `true` | Remove the workdir when the item is closed. |
 
 ## Run state
