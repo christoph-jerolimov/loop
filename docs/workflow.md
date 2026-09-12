@@ -52,6 +52,12 @@ merge, the remote branch.
 `loop status` shows the gate; `loop approve <run>` lets it continue on the
 next `loop watch` tick.
 
+## Before the first run
+
+`loop doctor` checks the configuration, the tools on the `PATH`, the
+repository, the credentials and every source, and exits non-zero when
+something is missing. See the [command reference](cli.md).
+
 ## Process model
 
 - `loop run <item>` drives one run in the foreground until the ticket is

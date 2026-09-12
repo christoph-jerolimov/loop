@@ -470,3 +470,22 @@ func (c *Client) Viewer(ctx context.Context) (string, error) {
 	}
 	return u.Login, nil
 }
+
+// Repository is the subset of repository fields loop uses.
+type Repository struct {
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
+	Permissions   struct {
+		Push  bool `json:"push"`
+		Admin bool `json:"admin"`
+	} `json:"permissions"`
+}
+
+// GetRepository fetches the repository, including the token's permissions.
+func (c *Client) GetRepository(ctx context.Context) (*Repository, error) {
+	var r Repository
+	if err := c.do(ctx, http.MethodGet, c.repoPath(""), nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
