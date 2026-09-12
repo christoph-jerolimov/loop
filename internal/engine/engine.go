@@ -500,8 +500,9 @@ func (e *Engine) data(r *state.Run) *prompt.Data {
 	return d
 }
 
-// runAgent executes one agent session and records it on the run.
-func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model string, timeout time.Duration) (*agent.Result, error) {
+// runAgent executes one agent session and records it on the run. extra
+// adds environment variables for this session only.
+func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model string, timeout time.Duration, extra ...map[string]string) (*agent.Result, error) {
 	if model == "" {
 		model = r.Model
 	}
@@ -519,9 +520,15 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	defer logf.Close()
 	sess := state.Session{Kind: kind, Started: time.Now(), LogFile: logPath}
 	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name(), modelSuffix(model))
+	env := e.env(r)
+	for _, m := range extra {
+		for k, v := range m {
+			env[k] = v
+		}
+	}
 	res, err := e.Runner.Run(ctx, agent.Options{
 		Workdir: r.Workdir, Prompt: text, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
-		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: e.env(r), EnvPassthrough: e.Cfg.Agent.EnvPassthrough, ExtraArgs: e.Cfg.Agent.ExtraArgs,
+		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough, ExtraArgs: e.Cfg.Agent.ExtraArgs,
 		Command: e.Cfg.Agent.Command, Log: logf, Progress: e.Out,
 	})
 	sess.Ended = time.Now()

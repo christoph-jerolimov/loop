@@ -34,6 +34,8 @@ type fakeGitHub struct {
 	readyCall int
 	mergeCall int
 	deleted   []string
+	replies   map[int64]string
+	resolved  []string
 }
 
 func (f *fakeGitHub) handler(t *testing.T) http.Handler {
@@ -48,12 +50,22 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			write(map[string]any{"login": "loop-bot"})
 		case p == "/graphql":
 			var q struct {
-				Query string `json:"query"`
+				Query     string            `json:"query"`
+				Variables map[string]string `json:"variables"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&q)
 			if strings.Contains(q.Query, "markPullRequestReadyForReview") {
 				f.readyCall++
 				f.pr["draft"] = false
+			}
+			if strings.Contains(q.Query, "reviewThreads") {
+				write(map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": map[string]any{"reviewThreads": map[string]any{"nodes": []any{
+					map[string]any{"id": "RT_2", "isResolved": false, "comments": map[string]any{"nodes": []any{map[string]any{"databaseId": 2}}}},
+				}}}}}})
+				return
+			}
+			if strings.Contains(q.Query, "resolveReviewThread") {
+				f.resolved = append(f.resolved, q.Variables["id"])
 			}
 			write(map[string]any{"data": map[string]any{}})
 		case p == "/repos/o/r/pulls" && r.Method == http.MethodPost:
@@ -82,6 +94,16 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			write(f.reviews)
 		case p == "/repos/o/r/pulls/7/comments":
 			write(f.rcomments)
+		case strings.HasPrefix(p, "/repos/o/r/pulls/7/comments/") && strings.HasSuffix(p, "/replies"):
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			var id int64
+			fmt.Sscanf(strings.TrimPrefix(p, "/repos/o/r/pulls/7/comments/"), "%d/replies", &id)
+			if f.replies == nil {
+				f.replies = map[int64]string{}
+			}
+			f.replies[id] = in["body"]
+			write(map[string]any{"id": 500})
 		case p == "/repos/o/r/issues/7/comments" && r.Method == http.MethodGet:
 			write(f.icomments)
 		case p == "/repos/o/r/issues/7/comments" && r.Method == http.MethodPost:
@@ -131,6 +153,7 @@ git config user.email a@t; git config user.name a
 echo "$prompt" >> feature.txt
 git add -A && git commit -qm "agent work"
 printf '## Summary\nAgent did things.\n' >> "$LOOP_SUMMARY_FILE"
+if [ -n "$LOOP_REPLIES_FILE" ]; then printf '[{"id": 2, "reply": "Renamed as asked.", "resolved": true}]' > "$LOOP_REPLIES_FILE"; fi
 echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"session_id\":\"$sid\"}"
 `
 
@@ -309,6 +332,12 @@ func TestFullLifecycle(t *testing.T) {
 	pb, _ := os.ReadFile(prompts[0])
 	if !strings.Contains(string(pb), "rename me") || !strings.Contains(string(pb), "please rename") {
 		t.Errorf("review prompt missing feedback:\n%s", pb)
+	}
+	if got := gh.replies[2]; !strings.HasPrefix(got, "Renamed as asked. (round 2, ") {
+		t.Errorf("inline comment 2 was not answered with the agent's note: %q", got)
+	}
+	if len(gh.resolved) != 1 || gh.resolved[0] != "RT_2" {
+		t.Errorf("thread of comment 2 should be resolved, got %v", gh.resolved)
 	}
 	// Feedback handled: another poll must not start a new round.
 	drive(state.PhaseMonitor)

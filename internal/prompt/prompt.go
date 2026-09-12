@@ -36,6 +36,8 @@ type Review struct {
 
 // ReviewComment is an inline code comment.
 type ReviewComment struct {
+	// ID identifies the comment so the agent can report what it did with it.
+	ID       int64
 	Author   string
 	Path     string
 	Line     int
@@ -83,6 +85,9 @@ type Data struct {
 	VerifyStep     string
 	VerifyOutput   string
 	Summary        string
+	// RepliesFile is where a review fix session records, per inline comment
+	// id, what it did, so loop can answer each thread and resolve it.
+	RepliesFile string
 }
 
 var funcs = template.FuncMap{

@@ -373,6 +373,70 @@ func (c *Client) ListReviewComments(ctx context.Context, n int) ([]ReviewComment
 	return out, err
 }
 
+// ReplyToReviewComment answers an inline review comment in its thread.
+func (c *Client) ReplyToReviewComment(ctx context.Context, pr int, commentID int64, body string) error {
+	return c.do(ctx, http.MethodPost, c.repoPath("/pulls/%d/comments/%d/replies", pr, commentID), map[string]string{"body": body}, nil)
+}
+
+// ReviewThreads maps inline comment ids to the node id of their thread
+// and whether the thread is resolved.
+func (c *Client) ReviewThreads(ctx context.Context, pr int) (map[int64]ReviewThread, error) {
+	var resp struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ReviewThreads struct {
+						Nodes []struct {
+							ID         string `json:"id"`
+							IsResolved bool   `json:"isResolved"`
+							Comments   struct {
+								Nodes []struct {
+									DatabaseID int64 `json:"databaseId"`
+								} `json:"nodes"`
+							} `json:"comments"`
+						} `json:"nodes"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	q := `query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) { reviewThreads(first: 100) { nodes { id isResolved comments(first: 100) { nodes { databaseId } } } } } } }`
+	if err := c.do(ctx, http.MethodPost, c.graphqlURL(), map[string]any{"query": q, "variables": map[string]any{"owner": c.Owner, "name": c.Repo, "pr": pr}}, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Errors) > 0 {
+		return nil, fmt.Errorf("github graphql: %s", resp.Errors[0].Message)
+	}
+	out := map[int64]ReviewThread{}
+	for _, t := range resp.Data.Repository.PullRequest.ReviewThreads.Nodes {
+		for _, cm := range t.Comments.Nodes {
+			out[cm.DatabaseID] = ReviewThread{ID: t.ID, Resolved: t.IsResolved}
+		}
+	}
+	return out, nil
+}
+
+// ReviewThread is a review conversation on the PR.
+type ReviewThread struct {
+	ID       string
+	Resolved bool
+}
+
+// ResolveReviewThread marks a thread resolved.
+func (c *Client) ResolveReviewThread(ctx context.Context, threadID string) error {
+	return c.graphql(ctx, `mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }`, map[string]any{"id": threadID})
+}
+
+func (c *Client) graphqlURL() string {
+	if c.BaseURL == "https://api.github.com" {
+		return "https://api.github.com/graphql"
+	}
+	return strings.TrimSuffix(c.BaseURL, "/api/v3") + "/graphql"
+}
+
 // CheckRun is one check on a commit.
 type CheckRun struct {
 	ID         int64  `json:"id"`
@@ -450,11 +514,7 @@ func (c *Client) DeleteBranch(ctx context.Context, branch string) error {
 
 // graphql runs one GraphQL mutation or query.
 func (c *Client) graphql(ctx context.Context, query string, vars map[string]any) error {
-	base := strings.TrimSuffix(c.BaseURL, "/api/v3")
-	endpoint := base + "/graphql"
-	if base == "https://api.github.com" {
-		endpoint = "https://api.github.com/graphql"
-	}
+	endpoint := c.graphqlURL()
 	var resp struct {
 		Errors []struct {
 			Message string `json:"message"`

@@ -17,7 +17,8 @@ prints the rendered session prompt for an item.
 | `.Round` | fix round number | review, ci, verify |
 | `.PR` | `.Number`, `.URL` | review, ci, conflict |
 | `.Reviews` | `.Author`, `.State`, `.Body`, `.URL` | review |
-| `.ReviewComments` | `.Author`, `.Path`, `.Line`, `.Body`, `.DiffHunk`, `.URL` | review |
+| `.ReviewComments` | `.ID`, `.Author`, `.Path`, `.Line`, `.Body`, `.DiffHunk`, `.URL` | review |
+| `.RepliesFile` | path of the JSON file where the session records, per comment id, its reply and whether the request is done | review |
 | `.PRComments` | `.Author`, `.Body`, `.Created`, `.URL` | review |
 | `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text`, `.Log` (tail of the Actions job log, see `workflow.ci_log_lines`) | ci |
 | `.Conflicts` | list of file paths | conflict |
@@ -48,6 +49,17 @@ agent verbatim; see [security](security.md).
 
 The same pattern applies to fix rounds: the review, CI and conflict
 templates receive the feedback as data and decide how to present it.
+
+## Answering reviewers
+
+The built-in review template asks the session to write
+`[{"id": <comment id>, "reply": "...", "resolved": true|false}]` to
+`.RepliesFile` (also available as `LOOP_REPLIES_FILE`). After the round
+loop replies in every inline thread it handed to the session, with the
+agent's note and the pushed commit, and resolves the threads marked
+`resolved`. Comments the session did not report on get a neutral note and
+stay open. A custom review template that drops this instruction still gets
+the neutral notes, so no reviewer thread is left unanswered.
 
 ## Agent steps
 

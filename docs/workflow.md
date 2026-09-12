@@ -18,7 +18,9 @@ order:
 3. **New feedback** (reviews requesting changes, inline comments, PR
    comments, not written by loop itself and not handled before) → `fix`
    with the `review` template. Handled comment ids are remembered, so the
-   same comment never triggers twice.
+   same comment never triggers twice. After the round loop replies in each
+   inline thread with what the session did and resolves the threads the
+   session reported as done (see [prompts](prompts.md#answering-reviewers)).
 4. **Red CI** on the current head → `fix` with the `ci` template, once per
    head commit. For checks that are GitHub Actions jobs, the last
    `workflow.ci_log_lines` lines of the job log are part of the prompt, with
