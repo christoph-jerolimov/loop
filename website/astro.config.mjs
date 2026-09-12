@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 import { satteri } from '@astrojs/markdown-satteri';
 import { docLinks } from './src/lib/doc-links.mjs';
 import { headingAnchors } from './src/lib/heading-anchors.mjs';
@@ -13,6 +14,7 @@ const base = process.env.BASE_PATH || '/';
 export default defineConfig({
   site,
   base,
+  integrations: [sitemap()],
   markdown: {
     syntaxHighlight: 'shiki',
     shikiConfig: { theme: 'github-dark-default', wrap: false },
