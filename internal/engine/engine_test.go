@@ -24,6 +24,7 @@ import (
 type fakeGitHub struct {
 	mu        sync.Mutex
 	pr        map[string]any
+	prHead    string
 	checks    []map[string]any
 	reviews   []map[string]any
 	rcomments []map[string]any
@@ -76,6 +77,7 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			if !strings.Contains(in["body"].(string), "Backlog item") {
 				t.Errorf("PR body missing template content: %q", in["body"])
 			}
+			f.prHead, _ = in["head"].(string)
 			f.pr = map[string]any{"number": 7, "node_id": "PR_7", "title": in["title"], "body": in["body"], "state": "open",
 				"draft": in["draft"], "merged": false, "mergeable": true, "mergeable_state": "clean", "html_url": "https://gh/o/r/pull/7",
 				"head": map[string]any{"ref": in["head"], "sha": "sha1"}, "base": map[string]any{"ref": "main"}}
@@ -125,7 +127,10 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			f.merged = true
 			write(map[string]any{"merged": true})
 		case strings.HasPrefix(p, "/repos/o/r/git/refs/heads/"):
-			f.deleted = append(f.deleted, strings.TrimPrefix(p, "/repos/o/r/git/refs/heads/"))
+			f.deleted = append(f.deleted, "o/r:"+strings.TrimPrefix(p, "/repos/o/r/git/refs/heads/"))
+			w.WriteHeader(204)
+		case strings.HasPrefix(p, "/repos/f/r/git/refs/heads/"):
+			f.deleted = append(f.deleted, "f/r:"+strings.TrimPrefix(p, "/repos/f/r/git/refs/heads/"))
 			w.WriteHeader(204)
 		case p == "/repos/o/r/pulls/7/requested_reviewers", strings.HasPrefix(p, "/repos/o/r/issues/7/labels"):
 			write(map[string]any{})
@@ -180,6 +185,7 @@ echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\"
 // an engine for a project with one markdown item.
 type lifecycle struct {
 	root, remote, proj string
+	fork               string
 	gh                 *fakeGitHub
 	eng                *Engine
 	run                *state.Run
@@ -187,6 +193,14 @@ type lifecycle struct {
 }
 
 func newLifecycle(t *testing.T, tweak func(cfg *config.Config)) *lifecycle {
+	return newLifecycleWith(t, func(cfg *config.Config, _ *lifecycle) {
+		if tweak != nil {
+			tweak(cfg)
+		}
+	})
+}
+
+func newLifecycleWith(t *testing.T, tweak func(cfg *config.Config, lc *lifecycle)) *lifecycle {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -197,6 +211,9 @@ func newLifecycle(t *testing.T, tweak func(cfg *config.Config)) *lifecycle {
 	remote := filepath.Join(root, "remote.git")
 	lc.remote = remote
 	run(t, root, "git", "init", "-q", "--bare", remote)
+	fork := filepath.Join(root, "fork.git")
+	run(t, root, "git", "init", "-q", "--bare", fork)
+	lc.fork = fork
 	seed := filepath.Join(root, "seed")
 	run(t, root, "git", "clone", "-q", remote, seed)
 	run(t, seed, "git", "config", "user.email", "t@t")
@@ -235,10 +252,10 @@ func newLifecycle(t *testing.T, tweak func(cfg *config.Config)) *lifecycle {
 		},
 		Workflow: config.Workflow{Merge: config.MergeWhenGreenApprove, PollInterval: config.Duration(time.Millisecond), Gates: []string{}},
 	}
-	cfg.ApplyDefaults()
 	if tweak != nil {
-		tweak(cfg)
+		tweak(cfg, lc)
 	}
+	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +395,7 @@ func TestFullLifecycle(t *testing.T) {
 	if _, err := os.Stat(r.Workdir); !os.IsNotExist(err) {
 		t.Errorf("workdir not cleaned up")
 	}
-	if len(gh.deleted) != 1 || gh.deleted[0] != r.Branch {
+	if len(gh.deleted) != 1 || gh.deleted[0] != "o/r:"+r.Branch {
 		t.Errorf("remote branch not deleted: %v", gh.deleted)
 	}
 	if len(r.Sessions) != 3 {
@@ -493,5 +510,30 @@ func TestLoopApproveReleasesMergeGate(t *testing.T) {
 	lc.drive(t, state.PhaseDone)
 	if lc.gh.mergeCall != 1 {
 		t.Errorf("merge calls = %d, want 1", lc.gh.mergeCall)
+	}
+}
+
+func TestForkWorkflow(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		cfg.Repo.Fork = "f/r"
+		cfg.Repo.PushURL = lc.fork
+		cfg.Workflow.Merge = config.MergeWhenGreen
+	})
+	lc.drive(t, state.PhaseMonitor)
+	if lc.gh.prHead != "f:"+lc.run.Branch {
+		t.Errorf("PR head = %q, want the fork owner prefix", lc.gh.prHead)
+	}
+	if out := run(t, lc.root, "git", "--git-dir", lc.fork, "branch", "--list", lc.run.Branch); !strings.Contains(out, lc.run.Branch) {
+		t.Errorf("branch was not pushed to the fork: %q", out)
+	}
+	if out := run(t, lc.root, "git", "--git-dir", lc.remote, "branch", "--list", lc.run.Branch); strings.Contains(out, lc.run.Branch) {
+		t.Errorf("branch must not be pushed to the upstream repository: %q", out)
+	}
+	lc.gh.mu.Lock()
+	lc.gh.checks = []map[string]any{{"id": 3, "name": "test", "status": "completed", "conclusion": "success", "html_url": "u"}}
+	lc.gh.mu.Unlock()
+	lc.drive(t, state.PhaseDone)
+	if len(lc.gh.deleted) != 1 || lc.gh.deleted[0] != "f/r:"+lc.run.Branch {
+		t.Errorf("branch should be deleted on the fork: %v", lc.gh.deleted)
 	}
 }

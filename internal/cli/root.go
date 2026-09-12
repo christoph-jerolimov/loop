@@ -3,11 +3,14 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -61,8 +64,12 @@ type app struct {
 	Engine  *engine.Engine
 }
 
-func load() (*app, error) {
-	path, err := config.Find(projectDir)
+func load() (*app, error) { return loadDir(projectDir, false) }
+
+// loadDir loads the project at or above dir. With prefix, every output
+// line carries the project name, for watching several projects at once.
+func loadDir(dir string, prefix bool) (*app, error) {
+	path, err := config.Find(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +81,49 @@ func load() (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	eng, err := engine.New(cfg, srcs, os.Stdout)
+	var out io.Writer = os.Stdout
+	if prefix {
+		out = &prefixWriter{prefix: cfg.Name + " | ", w: os.Stdout}
+	}
+	eng, err := engine.New(cfg, srcs, out)
 	if err != nil {
 		return nil, err
 	}
 	eng.Gate = askGate
 	return &app{Cfg: cfg, Sources: srcs, Engine: eng}, nil
+}
+
+// prefixWriter prepends a prefix to every line written through it.
+type prefixWriter struct {
+	prefix  string
+	w       io.Writer
+	mu      sync.Mutex
+	midline bool
+}
+
+func (p *prefixWriter) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := len(b)
+	var buf bytes.Buffer
+	for len(b) > 0 {
+		if !p.midline {
+			buf.WriteString(p.prefix)
+			p.midline = true
+		}
+		i := bytes.IndexByte(b, '\n')
+		if i < 0 {
+			buf.Write(b)
+			break
+		}
+		buf.Write(b[:i+1])
+		p.midline = false
+		b = b[i+1:]
+	}
+	if _, err := p.w.Write(buf.Bytes()); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func isTTY() bool {

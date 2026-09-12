@@ -43,6 +43,44 @@ type Repo struct {
 	BranchPrefix string `yaml:"branch_prefix"`
 	// GitHub is "owner/name". Derived from URL when empty.
 	GitHub string `yaml:"github"`
+	// Fork is "owner/name" of a fork to push branches to when you have no
+	// push access to the repository. Pull requests are then opened from the
+	// fork against repo.github.
+	Fork string `yaml:"fork"`
+	// PushURL is the git URL of the fork. Derived from URL and Fork when empty.
+	PushURL string `yaml:"push_url"`
+}
+
+// ForkOwner returns the owner part of Fork.
+func (r Repo) ForkOwner() string {
+	owner, _, _ := strings.Cut(r.Fork, "/")
+	return owner
+}
+
+// PushRepo is the GitHub repository branches are pushed to: the fork when
+// configured, otherwise the repository itself.
+func (r Repo) PushRepo() string {
+	if r.Fork != "" {
+		return r.Fork
+	}
+	return r.GitHub
+}
+
+// HeadRef is the PR head reference GitHub expects: "owner:branch" from a
+// fork, the bare branch name otherwise.
+func (r Repo) HeadRef(branch string) string {
+	if r.Fork != "" {
+		return r.ForkOwner() + ":" + branch
+	}
+	return branch
+}
+
+// deriveForkURL rewrites a github.com clone URL to point at the fork.
+func deriveForkURL(url, fork string) string {
+	if m := githubURLRe.FindStringSubmatch(url); m != nil {
+		return strings.Replace(url, m[1]+"/"+m[2], fork, 1)
+	}
+	return ""
 }
 
 // SourceConfig configures one backlog source. Fields that do not apply to
@@ -334,6 +372,9 @@ func (c *Config) ApplyDefaults() {
 			c.Repo.GitHub = m[1] + "/" + m[2]
 		}
 	}
+	if c.Repo.Fork != "" && c.Repo.PushURL == "" {
+		c.Repo.PushURL = deriveForkURL(c.Repo.URL, c.Repo.Fork)
+	}
 	for i := range c.Sources {
 		s := &c.Sources[i]
 		if s.Name == "" {
@@ -519,6 +560,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Repo.GitHub == "" {
 		errs = append(errs, errors.New("repo.github (owner/name) could not be derived from repo.url; set it explicitly"))
+	}
+	if c.Repo.Fork != "" {
+		if !strings.Contains(c.Repo.Fork, "/") {
+			errs = append(errs, fmt.Errorf("repo.fork must be owner/name, got %q", c.Repo.Fork))
+		}
+		if c.Repo.PushURL == "" {
+			errs = append(errs, errors.New("repo.push_url is required with repo.fork when repo.url is not a github.com URL"))
+		}
 	}
 	return errors.Join(errs...)
 }

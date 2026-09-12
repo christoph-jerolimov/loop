@@ -298,6 +298,30 @@ func (e *Engine) env(r *state.Run) map[string]string {
 
 func (e *Engine) baseRepo() string { return e.Cfg.StatePath("repo") }
 
+// pushRemote is the git remote branches are pushed to.
+func (e *Engine) pushRemote() string {
+	if e.Cfg.Repo.Fork != "" {
+		return "fork"
+	}
+	return "origin"
+}
+
+// remotes lists the remotes a branch name must be free on.
+func (e *Engine) remotes() []string {
+	if e.Cfg.Repo.Fork != "" {
+		return []string{"origin", "fork"}
+	}
+	return []string{"origin"}
+}
+
+// ensureFork registers the fork remote in the given repository.
+func (e *Engine) ensureFork(ctx context.Context, repo string) error {
+	if e.Cfg.Repo.Fork == "" {
+		return nil
+	}
+	return gitx.EnsureRemote(ctx, repo, "fork", e.Cfg.Repo.PushURL)
+}
+
 func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseCheckout, "")
 	it := r.Item
@@ -309,7 +333,10 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 		if err := gitx.EnsureBaseClone(ctx, e.Cfg.Repo.URL, e.baseRepo(), e.Cfg.Repo.Base); err != nil {
 			return err
 		}
-		branch, err = gitx.UniqueBranch(ctx, e.baseRepo(), want)
+		if err := e.ensureFork(ctx, e.baseRepo()); err != nil {
+			return err
+		}
+		branch, err = gitx.UniqueBranch(ctx, e.baseRepo(), want, e.remotes()...)
 		if err != nil {
 			return err
 		}
@@ -325,7 +352,10 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 		if err := gitx.Clone(ctx, e.Cfg.Repo.URL, r.Workdir, want+"-tmp", e.Cfg.Repo.Base); err != nil {
 			return err
 		}
-		branch, err = gitx.UniqueBranch(ctx, r.Workdir, want)
+		if err := e.ensureFork(ctx, r.Workdir); err != nil {
+			return err
+		}
+		branch, err = gitx.UniqueBranch(ctx, r.Workdir, want, e.remotes()...)
 		if err != nil {
 			return err
 		}

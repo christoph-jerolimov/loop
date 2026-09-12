@@ -61,11 +61,13 @@ refused unless `--force` is given. On a terminal, gates ask interactively.
 | `--all` | Start every ready item in backlog order, respecting `workflow.concurrency`, and return when nothing is left. |
 | `-s, --source` | With `--all`: only items from this source. |
 
-## `loop watch [--pick]`
+## `loop watch [--pick] [project-dir...]`
 
 The long-running worker: drives every active run (polls PRs, runs fix
 rounds, merges, closes, cleans up). With `--pick` it also starts ready
-backlog items whenever capacity is free.
+backlog items whenever capacity is free. Given project folders, it watches
+all of them at once and prefixes output with the project name:
+`loop watch --pick ~/loops/*`.
 
 ## `loop status [-a]`
 

@@ -106,6 +106,31 @@ something is missing. See the [command reference](cli.md).
 Runs are locked per process (`.loop/runs/<run>/lock`), so several loop
 processes on the same project never drive the same run.
 
+## Contributing through a fork
+
+Without push access to a repository, set `repo.fork` to a fork you can
+push to. loop clones and reads from `repo.url`, pushes every branch to the
+fork (`push_url`), opens pull requests from `forkowner:branch` against the
+base branch of the original repository, and deletes the branch on the fork
+after the merge. Merge policies other than `manual` need push access to
+the original repository; `loop doctor` warns when that is missing.
+
+```yaml
+repo:
+  url: git@github.com:acme/widgets.git
+  fork: me/widgets
+```
+
+## Watching several projects
+
+`loop watch` accepts project folders and drives all of them in one
+process, each with its own configuration, sources and concurrency; output
+lines carry the project name:
+
+```sh
+loop watch --pick ~/loops/*
+```
+
 ## Retries and limits
 
 | Limit | Default | When exceeded |
