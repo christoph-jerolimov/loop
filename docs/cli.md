@@ -1,10 +1,12 @@
 # Command reference
 
 Every command looks for `loop.yaml` in the current folder or any parent;
-`-C <dir>` points it elsewhere. Items are addressed by anything a source
-understands: `login.md`, `#12`, `owner/repo#12`, `PROJ-7`, a ticket URL, or
-the full id `backlog:login`. Runs are addressed by run id, a unique prefix
-of it, or the item id.
+`-C <dir>` points it elsewhere. `--runner <name>` (or `LOOP_RUNNER=<name>`)
+selects the agent harness for this invocation instead of the one in
+`loop.yaml`; see [harnesses](configuration.md#harnesses). Items are
+addressed by anything a source understands: `login.md`, `#12`,
+`owner/repo#12`, `PROJ-7`, a ticket URL, or the full id `backlog:login`.
+Runs are addressed by run id, a unique prefix of it, or the item id.
 
 ## `loop --version`
 
@@ -23,7 +25,7 @@ Run every check a run depends on, before any worktree is created:
 | Group | Checks |
 | --- | --- |
 | Configuration | `loop.yaml` parses and validates; prompt templates render; step scripts exist and are executable; agent prompts and skill folders exist. |
-| Tools | `git` and the agent CLI (`claude`, or `agent` for Cursor) are on the `PATH`; a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
+| Tools | `git` and the harness command (`claude`, `agent` for Cursor, `codex`, `gemini`, `aider`, `opencode`, `copilot`, `amp`, or the custom command) are on the `PATH`; for Claude a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
 | Repository | `repo.url` is reachable and has the base branch. |
 | Credentials | The GitHub token is accepted, can push to the repository, and the default branch matches `repo.base` (warning otherwise). Jira credentials are accepted for every Jira site. |
 | Sources | Every source can be listed; the number of open items is shown, and for GitHub sources whether ticket comments are loaded and why. |

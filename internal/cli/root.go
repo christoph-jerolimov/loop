@@ -25,13 +25,17 @@ import (
 // Version is set at build time.
 var Version = "dev"
 
-var projectDir string
+var (
+	projectDir string
+	runnerFlag string
+)
 
 var root = &cobra.Command{
 	Use:   "loop",
 	Short: "Run AI coding sessions from a backlog and drive the resulting PRs to merge",
 	Long: `loop picks ideas, goals or tickets from a backlog (markdown files, GitHub
-issues, Jira), starts a coding agent (claude or cursor) in a fresh checkout,
+issues, Jira), starts a coding agent (Claude Code, Cursor, Codex, Gemini, Aider,
+OpenCode, Copilot, Amp or your own script) in a fresh checkout,
 opens a pull request, and keeps working the PR through reviews and CI until
 it is merged and the ticket is closed.
 
@@ -43,6 +47,7 @@ A project is a folder with a loop.yaml; run "loop init" to create one.`,
 
 func init() {
 	root.PersistentFlags().StringVarP(&projectDir, "project", "C", ".", "project folder (or any folder below it)")
+	root.PersistentFlags().StringVar(&runnerFlag, "runner", "", "agent harness for this invocation (overrides loop.yaml and LOOP_RUNNER)")
 	root.AddCommand(initCmd, listCmd, showCmd, runCmd, watchCmd, statusCmd, approveCmd, resumeCmd, joinCmd, cleanCmd)
 }
 
@@ -73,7 +78,7 @@ func loadDir(dir string, prefix bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := config.Load(path)
+	cfg, err := loadProjectConfig(path)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +96,29 @@ func loadDir(dir string, prefix bool) (*app, error) {
 	}
 	eng.Gate = askGate
 	return &app{Cfg: cfg, Sources: srcs, Engine: eng}, nil
+}
+
+// loadProjectConfig loads loop.yaml and applies the command-line overrides: the
+// harness from --runner, else from LOOP_RUNNER, else from loop.yaml.
+func loadProjectConfig(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if r := runnerOverride(); r != "" && r != cfg.Agent.Runner {
+		cfg.Agent.Runner = r
+		if err := cfg.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, nil
+}
+
+func runnerOverride() string {
+	if runnerFlag != "" {
+		return runnerFlag
+	}
+	return os.Getenv("LOOP_RUNNER")
 }
 
 // prefixWriter prepends a prefix to every line written through it.

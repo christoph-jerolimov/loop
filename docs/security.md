@@ -16,7 +16,10 @@ keep that contained and what remains your decision.
   permits, and never what `agent.deny` lists. The defaults allow committing
   and deny pushing; `permission_mode: bypassPermissions` lifts every check
   and should stay confined to sandboxes (see [permissions in headless
-  sessions](configuration.md#permissions-in-headless-sessions)).
+  sessions](configuration.md#permissions-in-headless-sessions)). The other
+  harnesses have no rules file and run with their auto-approve flag, so
+  with them the withheld credentials, the verify steps and the merge gates
+  are the whole safety net.
 - **Pushing and merging** are done by loop with your token, behind the
   merge policy and gates you configure. With `merge: manual` nothing lands
   on the base branch without a human.

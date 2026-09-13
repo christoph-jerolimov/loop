@@ -42,7 +42,12 @@ prompts:
   verify: prompts/verify.md
 
 agent:
-  runner: claude             # claude or cursor
+  runner: claude             # claude | cursor | codex | gemini | aider | opencode | copilot | amp | custom
+  # command: ./hooks/agent.sh  # custom: any script that reads $LOOP_PROMPT_FILE and commits
+  # args: ["--task", "{prompt_file}"]
+  # prompt_via: args           # stdin | args | both
+  # session_id: none           # uuid | none | run:<args> | json:<key>
+  # resume: "./hooks/agent.sh --continue {session}"
   # model: claude-opus-5     # per-item override: "model:" line or frontmatter
   permission_mode: acceptEdits # or bypassPermissions to skip all checks
   # Permission rules written to <workdir>/.claude/settings.local.json. The

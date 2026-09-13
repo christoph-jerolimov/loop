@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/christoph-jerolimov/loop/internal/agent"
 	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
@@ -66,7 +67,7 @@ func (d *doctor) run() {
 		d.fail("%v", err)
 		return
 	}
-	cfg, err := config.Load(path)
+	cfg, err := loadProjectConfig(path)
 	if err != nil {
 		d.fail("%v", err)
 		return
@@ -76,12 +77,9 @@ func (d *doctor) run() {
 
 	fmt.Println("Tools")
 	d.checkTool("git", "git", "--version")
-	agentBin := cfg.Agent.Command
-	if agentBin == "" {
-		agentBin = map[string]string{"claude": "claude", "cursor": "agent"}[cfg.Agent.Runner]
-	}
-	d.checkTool(cfg.Agent.Runner+" runner", agentBin, "--version")
-	d.checkPermissions(cfg)
+	runner, _ := agent.Resolve(cfg.Agent.Spec()) // validated with the config
+	d.checkTool(runner.Name+" runner", runner.Command, "--version")
+	d.checkPermissions(cfg, runner)
 
 	fmt.Println("Repository")
 	d.checkRepo(cfg)
@@ -137,8 +135,8 @@ func (d *doctor) checkFiles(cfg *config.Config) {
 
 // checkPermissions warns when a headless Claude session could not run the
 // project's checks because no matching Bash rule is allowed.
-func (d *doctor) checkPermissions(cfg *config.Config) {
-	if cfg.Agent.Runner != "claude" {
+func (d *doctor) checkPermissions(cfg *config.Config, runner *agent.Runner) {
+	if runner.SettingsFile == "" {
 		return
 	}
 	if cfg.Agent.PermissionMode == "bypassPermissions" {

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/christoph-jerolimov/loop/internal/agent"
 )
 
 // FileName is the project configuration file.
@@ -146,6 +148,11 @@ func (p *CommentsPolicy) UnmarshalYAML(n *yaml.Node) error {
 // Loaded reports whether any comments are loaded under the policy.
 func (p CommentsPolicy) Loaded() bool { return p != CommentsNone }
 
+// Spec is the harness description handed to the agent package.
+func (a Agent) Spec() agent.Spec {
+	return agent.Spec{Runner: a.Runner, Command: a.Command, Args: a.Args, PromptVia: a.PromptVia, SessionID: a.SessionID, Resume: a.Resume, ExtraArgs: a.ExtraArgs}
+}
+
 // Prompts points to template files, relative to loop.yaml. Empty values
 // fall back to the embedded defaults.
 type Prompts struct {
@@ -158,10 +165,19 @@ type Prompts struct {
 
 // Agent configures the coding agent runner.
 type Agent struct {
-	Runner         string `yaml:"runner"` // claude | cursor
-	Command        string `yaml:"command"`
-	Model          string `yaml:"model"`
-	PermissionMode string `yaml:"permission_mode"`
+	// Runner is a built-in harness profile (claude, cursor, codex, gemini,
+	// aider, opencode, copilot, amp) or custom. The --runner flag and the
+	// LOOP_RUNNER variable override it.
+	Runner  string `yaml:"runner"`
+	Command string `yaml:"command"`
+	// Args, PromptVia, SessionID and Resume define a custom harness or
+	// override one field of a built-in profile. See agent.Runner.
+	Args           []string `yaml:"args"`
+	PromptVia      string   `yaml:"prompt_via"`
+	SessionID      string   `yaml:"session_id"`
+	Resume         string   `yaml:"resume"`
+	Model          string   `yaml:"model"`
+	PermissionMode string   `yaml:"permission_mode"`
 	// Allow and Deny are Claude Code permission rules written to
 	// <workdir>/.claude/settings.local.json before a session starts, so a
 	// headless session can run the commands it needs without prompting.
@@ -554,12 +570,11 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("source %s: unknown type %q", s.Name, s.Type))
 		}
 	}
-	switch c.Agent.Runner {
-	case "claude", "cursor":
-	default:
-		errs = append(errs, fmt.Errorf("agent.runner must be claude or cursor, got %q", c.Agent.Runner))
+	runner, err := agent.Resolve(c.Agent.Spec())
+	if err != nil {
+		errs = append(errs, err)
 	}
-	if c.Agent.Runner == "claude" {
+	if runner != nil && runner.SettingsFile != "" {
 		ok := false
 		for _, m := range PermissionModes {
 			ok = ok || m == c.Agent.PermissionMode

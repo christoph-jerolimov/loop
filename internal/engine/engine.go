@@ -29,7 +29,7 @@ type Engine struct {
 	Cfg     *config.Config
 	Sources source.Set
 	Store   *state.Store
-	Runner  agent.Runner
+	Runner  *agent.Runner
 	Out     io.Writer
 	// Interactive lets gates ask on the terminal instead of parking the run.
 	Interactive bool
@@ -46,7 +46,7 @@ type Engine struct {
 
 // New wires an engine from the config.
 func New(cfg *config.Config, sources source.Set, out io.Writer) (*Engine, error) {
-	runner, err := agent.New(cfg.Agent.Runner)
+	runner, err := agent.Resolve(cfg.Agent.Spec())
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func (e *Engine) Start(ctx context.Context, it *item.Item, force bool) (*state.R
 			return nil, fmt.Errorf("item %s depends on open items: %s; use --force to run anyway", it.ID, strings.Join(rd.OpenDeps, ", "))
 		}
 	}
-	r, err := e.Store.Create(it, e.Runner.Name())
+	r, err := e.Store.Create(it, e.Runner.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -382,22 +382,22 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 // writeAgentSettings puts the permission rules into the workdir so a
 // headless Claude session can run tests and commit without prompting.
 func (e *Engine) writeAgentSettings(r *state.Run) error {
-	if e.Cfg.Agent.Runner != "claude" {
+	if e.Runner.SettingsFile == "" {
 		return nil
 	}
 	b, err := agent.ClaudeSettings(e.Cfg.Agent.PermissionMode, e.Cfg.Agent.Allow, e.Cfg.Agent.Deny)
 	if err != nil {
 		return err
 	}
-	dst := filepath.Join(r.Workdir, ".claude", "settings.local.json")
+	dst := filepath.Join(r.Workdir, e.Runner.SettingsFile)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
 	if err := os.WriteFile(dst, b, 0o644); err != nil {
 		return err
 	}
-	e.ensureExcluded(r.Workdir, ".claude/settings.local.json")
-	e.logf(r, "wrote %d allow / %d deny permission rules to .claude/settings.local.json", len(e.Cfg.Agent.Allow), len(e.Cfg.Agent.Deny))
+	e.ensureExcluded(r.Workdir, e.Runner.SettingsFile)
+	e.logf(r, "wrote %d allow / %d deny permission rules to %s", len(e.Cfg.Agent.Allow), len(e.Cfg.Agent.Deny), e.Runner.SettingsFile)
 	return nil
 }
 
@@ -557,7 +557,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	}
 	defer logf.Close()
 	sess := state.Session{Kind: kind, Started: time.Now(), LogFile: logPath}
-	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name(), modelSuffix(model))
+	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name, modelSuffix(model))
 	env := e.env(r)
 	env["LOOP_PROMPT_FILE"] = promptPath
 	for _, m := range extra {
@@ -567,8 +567,8 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	}
 	res, err := e.Runner.Run(ctx, agent.Options{
 		Workdir: r.Workdir, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
-		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough, ExtraArgs: e.Cfg.Agent.ExtraArgs,
-		Command: e.Cfg.Agent.Command, Log: logf, Progress: e.Out,
+		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough,
+		Log: logf, Progress: e.Out,
 	})
 	sess.Ended = time.Now()
 	if res != nil {
