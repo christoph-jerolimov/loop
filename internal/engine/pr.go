@@ -304,7 +304,27 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return false, nil
 	}
 
-	// 1. Conflicts.
+	// 1. A human pushed to the branch since loop's last push.
+	if r.LastPushSHA != "" && pr.Head.SHA != r.LastPushSHA {
+		who := e.foreignPushers(ctx, gh, r, r.LastPushSHA)
+		r.LastPushSHA = pr.Head.SHA // the new head is loop's baseline from here on
+		if len(who) > 0 {
+			ffErr := gitx.FastForward(ctx, r.Workdir, e.pushRemote(), r.Branch)
+			if e.Cfg.Workflow.OnHumanPush == config.HumanPushPause {
+				msg := fmt.Sprintf("%s pushed to %s, so loop stops driving this PR rather than build on top of their work", strings.Join(who, ", "), r.Branch)
+				if ffErr != nil {
+					msg += fmt.Sprintf(" (the worktree could not be fast-forwarded: %v)", ffErr)
+				}
+				return e.blockOrWait(ctx, r, "%s", msg)
+			}
+			if ffErr != nil {
+				return e.blockOrWait(ctx, r, "%s pushed to %s and the worktree could not be fast-forwarded: %v", strings.Join(who, ", "), r.Branch, ffErr)
+			}
+			e.logf(r, "%s pushed to %s; continuing on top of their commits (on_human_push: continue)", strings.Join(who, ", "), r.Branch)
+		}
+	}
+
+	// 2. Conflicts.
 	if pr.Mergeable != nil && !*pr.Mergeable && (pr.MergeableState == "dirty" || pr.MergeableState == "") {
 		if r.ConflictRounds >= e.Cfg.Workflow.ConflictAttempts {
 			return e.blockOrWait(ctx, r, "merge conflict not resolved after %d attempt(s)", r.ConflictRounds)
@@ -313,7 +333,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return e.toFix(r)
 	}
 
-	// 2. Reviews and comments (anything since the run started that was not handled yet).
+	// 3. Reviews and comments (anything since the run started that was not handled yet).
 	fb, err := e.collectFeedback(ctx, gh, r, r.Created)
 	if err != nil {
 		e.pollFailed(r, err)
@@ -327,7 +347,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return e.toFix(r)
 	}
 
-	// 3. CI.
+	// 4. CI.
 	st, err := e.ci(ctx, gh, pr.Head.SHA)
 	if err != nil {
 		e.pollFailed(r, err)
@@ -370,6 +390,44 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 	r.SetPhase(state.PhaseMerge, "")
 	return false, nil
+}
+
+// foreignPushers lists the GitHub logins (or author names) behind the
+// commits on the PR after loop's last push that were not made by loop's
+// own account. When that push is not among the commits any more (a force
+// push), every commit counts.
+func (e *Engine) foreignPushers(ctx context.Context, gh *ghapi.Client, r *state.Run, since string) []string {
+	commits, err := gh.ListPullRequestCommits(ctx, r.PR.Number)
+	if err != nil {
+		e.logf(r, "list PR commits: %v", err)
+		return nil
+	}
+	start := 0
+	for i, c := range commits {
+		if c.SHA == since {
+			start = i + 1
+		}
+	}
+	seen := map[string]bool{}
+	var who []string
+	for _, c := range commits[start:] {
+		login := ""
+		if c.Author != nil {
+			login = c.Author.Login
+		}
+		if login == "" && c.Committer != nil {
+			login = c.Committer.Login
+		}
+		if login == "" {
+			login = c.Commit.Author.Name
+		}
+		if login == "" || login == e.self || login == "web-flow" || seen[login] {
+			continue
+		}
+		seen[login] = true
+		who = append(who, login)
+	}
+	return who
 }
 
 // maxPollBackoff caps how far consecutive failures stretch the next poll.

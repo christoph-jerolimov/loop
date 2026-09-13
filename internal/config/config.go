@@ -297,7 +297,17 @@ type Workflow struct {
 	// pull request: "/loop approve" releases a gate, "/loop resume" restarts
 	// a blocked run.
 	PRCommands *bool `yaml:"pr_commands"`
+	// OnHumanPush says what happens when someone other than loop pushes to
+	// the run branch: pause (park the run with a note, the default) or
+	// continue (fast-forward the worktree and keep driving on top).
+	OnHumanPush string `yaml:"on_human_push"`
 }
+
+// Reactions to a human pushing to the run branch.
+const (
+	HumanPushPause    = "pause"
+	HumanPushContinue = "continue"
+)
 
 // Duration is a yaml-friendly time.Duration.
 type Duration time.Duration
@@ -524,6 +534,9 @@ func (c *Config) ApplyDefaults() {
 		n := 200
 		c.Workflow.CILogLines = &n
 	}
+	if c.Workflow.OnHumanPush == "" {
+		c.Workflow.OnHumanPush = HumanPushPause
+	}
 	if c.Workflow.Gates == nil && c.Workflow.Merge != MergeManual {
 		c.Workflow.Gates = []string{GateBeforeMerge}
 	}
@@ -592,6 +605,11 @@ func (c *Config) Validate() error {
 	case "squash", "merge", "rebase":
 	default:
 		errs = append(errs, fmt.Errorf("workflow.merge_method must be squash, merge or rebase; got %q", c.Workflow.MergeMethod))
+	}
+	switch c.Workflow.OnHumanPush {
+	case HumanPushPause, HumanPushContinue:
+	default:
+		errs = append(errs, fmt.Errorf("workflow.on_human_push must be %s or %s, got %q", HumanPushPause, HumanPushContinue, c.Workflow.OnHumanPush))
 	}
 	for _, g := range c.Workflow.Gates {
 		switch g {
