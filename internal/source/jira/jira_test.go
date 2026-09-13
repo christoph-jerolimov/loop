@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/christoph-jerolimov/loop/internal/config"
+	"github.com/christoph-jerolimov/loop/internal/jiraapi"
 )
 
 type fakeJira struct {
+	legacy      bool // no /search/jql: an older Jira Server
 	jql         string
 	transitions []string
 	labelOps    []string
@@ -39,6 +41,19 @@ func (f *fakeJira) handler(t *testing.T) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		write := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 		switch {
+		case r.URL.Path == "/rest/api/2/myself":
+			write(map[string]any{"displayName": "Ann Admin", "name": "ann"})
+		case r.URL.Path == "/rest/api/2/search/jql" && f.legacy:
+			w.WriteHeader(404)
+			write(map[string]any{"errorMessages": []string{"no such endpoint"}})
+		case r.URL.Path == "/rest/api/2/search" && f.legacy:
+			f.jql = r.URL.Query().Get("jql")
+			// Two pages of one issue each.
+			if r.URL.Query().Get("startAt") == "0" {
+				write(map[string]any{"issues": []any{issue("ABC-7", "Rate limit", "To Do", "new")}, "total": 2, "startAt": 0})
+			} else {
+				write(map[string]any{"issues": []any{issue("ABC-8", "Second", "To Do", "new")}, "total": 2, "startAt": 1})
+			}
 		case r.URL.Path == "/rest/api/2/search/jql":
 			f.jql = r.URL.Query().Get("jql")
 			write(map[string]any{"issues": []any{issue("ABC-7", "Rate limit", "To Do", "new", blocked, outward), issue("ABC-8", "Done thing", "Done", "done")}, "isLast": true})
@@ -150,5 +165,62 @@ func TestClaimAndClose(t *testing.T) {
 	}
 	if f.labelOps[len(f.labelOps)-1] != "remove:loop-in-progress" || f.transitions[len(f.transitions)-1] != "31" || f.comments[len(f.comments)-1] != "merged" {
 		t.Errorf("close: labels=%v comments=%v transitions=%v", f.labelOps, f.comments, f.transitions)
+	}
+}
+
+func TestReleaseAndComment(t *testing.T) {
+	s, f := newSource(t)
+	it, err := s.Get(context.Background(), "ABC-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Release(context.Background(), it); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.labelOps, ",") != "remove:loop-in-progress" {
+		t.Errorf("release label ops = %v", f.labelOps)
+	}
+	if err := s.Comment(context.Background(), it, "opened PR"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.comments, ",") != "opened PR" {
+		t.Errorf("comments = %v", f.comments)
+	}
+	// Jira tickets are closed by loop through a transition, never by GitHub.
+	if s.Name() != "jira" || s.Type() != "jira" || s.SupportsAutoClose() {
+		t.Errorf("identity: %s %s %v", s.Name(), s.Type(), s.SupportsAutoClose())
+	}
+
+	// Without claiming, Release touches nothing.
+	s2, f2 := newSource(t)
+	s2.cfg.Claim = false
+	if err := s2.Release(context.Background(), it); err != nil || len(f2.labelOps) != 0 {
+		t.Errorf("release without claim: err=%v ops=%v", err, f2.labelOps)
+	}
+}
+
+func TestLegacySearchPagesThroughOlderServers(t *testing.T) {
+	s, f := newSource(t)
+	f.legacy = true
+	items, err := s.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].NativeID != "ABC-7" || items[1].NativeID != "ABC-8" || !strings.Contains(f.jql, "project = ABC") {
+		t.Errorf("legacy search: %d items, jql %q", len(items), f.jql)
+	}
+}
+
+func TestClientMyselfAndBrowseURL(t *testing.T) {
+	s, _ := newSource(t)
+	c, err := jiraapi.New(s.cfg.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if who, err := c.Myself(context.Background()); err != nil || who != "Ann Admin" {
+		t.Errorf("Myself = %q, %v", who, err)
+	}
+	if got := c.BrowseURL("ABC-7"); got != s.cfg.URL+"/browse/ABC-7" {
+		t.Errorf("BrowseURL = %s", got)
 	}
 }

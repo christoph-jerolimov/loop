@@ -190,3 +190,10 @@ func TestCommentUnknownItem(t *testing.T) {
 		t.Error("commenting on a missing file must fail")
 	}
 }
+
+func TestIdentity(t *testing.T) {
+	s := New(config.SourceConfig{Name: "ideas", Type: "markdown"}, 0, t.TempDir())
+	if s.Name() != "ideas" || s.Type() != "markdown" || s.SupportsAutoClose() {
+		t.Errorf("identity: %s %s %v", s.Name(), s.Type(), s.SupportsAutoClose())
+	}
+}
