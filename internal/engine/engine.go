@@ -40,6 +40,8 @@ type Engine struct {
 	ghOnce sync.Once
 	ghErr  error
 	self   string
+	// budgetNoted keeps the "not picking" line to once per budget stop.
+	budgetNoted bool
 
 	heavy chan struct{}
 }
@@ -122,6 +124,9 @@ func (e *Engine) Start(ctx context.Context, it *item.Item, force bool) (*state.R
 	}
 	if it.Closed {
 		return nil, fmt.Errorf("item %s is closed", it.ID)
+	}
+	if err := e.checkStartBudget(); err != nil {
+		return nil, err
 	}
 	if !force {
 		if rd.InProgress {
@@ -241,6 +246,17 @@ func (e *Engine) heavyStep(ctx context.Context, r *state.Run) (bool, error) {
 // abandon fails the run, releases the claim, leaves a note on the item
 // and runs steps.failed.
 func (e *Engine) abandon(ctx context.Context, r *state.Run, err error) {
+	if isBudget(err) {
+		// Not a failure: raise the budget in loop.yaml and resume.
+		if r.PR != nil {
+			if gh, gerr := e.GitHub(); gerr == nil {
+				_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %v. Raise `budget` in loop.yaml and run `loop resume %s`.\n\n%s", err, r.ID, loopMarker))
+			}
+		}
+		e.logf(r, "%v", err)
+		e.block(ctx, r, err.Error())
+		return
+	}
 	r.Fail(err)
 	e.logf(r, "failed: %v", err)
 	if src := e.Sources.ByName(r.Item.Source); src != nil {
@@ -541,6 +557,9 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	}
 	if timeout == 0 {
 		timeout = e.Cfg.Agent.Timeout.D()
+	}
+	if err := e.checkRunBudget(r); err != nil {
+		return nil, err
 	}
 	n := len(r.Sessions) + 1
 	logPath := filepath.Join(r.Dir(), fmt.Sprintf("session-%02d-%s.log", n, kind))

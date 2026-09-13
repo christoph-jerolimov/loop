@@ -76,6 +76,13 @@ all of them at once and prefixes output with the project name:
 Active runs with phase, branch, PR and the current note (gate, next poll,
 error). `-a` includes finished runs.
 
+## `loop stats [--json]`
+
+Every run in the project summarised: runs per phase, merged PRs, mean fix
+rounds per PR, sessions and agent time, cost in total and per merged PR
+(for harnesses that report it, Claude Code does), the mean time from
+start to done, and today's runs and spend against `budget`.
+
 ## `loop logs <run>`
 
 Without flags, the run log: every phase change, session start and end,

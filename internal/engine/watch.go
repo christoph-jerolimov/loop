@@ -136,6 +136,14 @@ func (e *Engine) resumeFromPR(ctx context.Context, only map[string]bool) {
 
 // pick starts ready items up to the concurrency limit.
 func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) (int, error) {
+	if err := e.checkStartBudget(); err != nil {
+		if !e.budgetNoted {
+			fmt.Fprintf(e.Out, "%v; not picking new items\n", err)
+			e.budgetNoted = true
+		}
+		return 0, nil
+	}
+	e.budgetNoted = false
 	items, errs := e.Sources.ListAll(ctx, o.Source)
 	for _, err := range errs {
 		fmt.Fprintf(e.Out, "warning: %v\n", err)
@@ -174,6 +182,9 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 }
 
 func (e *Engine) anythingReady(ctx context.Context, o WatchOptions) bool {
+	if e.checkStartBudget() != nil {
+		return false
+	}
 	items, _ := e.Sources.ListAll(ctx, o.Source)
 	for _, it := range items {
 		if rd := e.Check(ctx, it); rd.Ready {

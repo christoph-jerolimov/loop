@@ -331,6 +331,37 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `pr_commands` | `true` | Let collaborators with push access drive a run from the PR: `/loop approve` releases a gate, `/loop resume` restarts a blocked run. |
 | `on_human_push` | `pause` | What happens when someone other than loop pushes to the run branch: `pause` parks the run with a note on the PR, `continue` fast-forwards the worktree and keeps driving on top of their commits. See [workflow](workflow.md#phases). |
 
+## `budget`
+
+Caps on what a run and the project may spend. Zero, the default, means no
+cap.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `run_cost` | `0` | The most one run may spend in USD across all its sessions. |
+| `run_time` | `0` | The most agent session wall clock one run may use, for example `2h`. |
+| `daily_cost` | `0` | The most the project may spend per calendar day. |
+| `daily_runs` | `0` | The most runs the project may start per calendar day. |
+
+Cost comes from harnesses that report it in their result (Claude Code
+does; the others report nothing, so cost caps are no-ops with them). Time
+caps count every session's wall clock and work with every harness.
+
+A run checks its caps before every session, including fix rounds. A run
+that hits one parks as `blocked` with a note on its PR, never as `failed`:
+raise the budget in `loop.yaml` and `loop resume <run>`. The daily caps
+also stop `loop watch --pick` and `loop run` from starting new runs; the
+watch loop says so once and keeps driving the runs it has. `loop stats`
+shows today's spend against the caps.
+
+```yaml
+budget:
+  run_cost: 5
+  run_time: 2h
+  daily_cost: 40
+  daily_runs: 10
+```
+
 ## Run state
 
 Each run lives in `.loop/runs/<run id>/`:

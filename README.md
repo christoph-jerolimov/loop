@@ -114,7 +114,9 @@ crashed `loop watch` simply continues where it stopped. Runs that exhaust
 their fix rounds, are held by branch protection, or hit an unrecoverable
 error are parked as `blocked` or `failed` with a note on the PR or ticket,
 and `steps.blocked` or `steps.failed` can notify you; `loop resume <run>`
-puts them back.
+puts them back. `budget` caps cost and agent time per run and per day, so
+a worker left alone cannot spend more than you decided; `loop stats` shows
+what it did spend.
 
 ## Commands
 
@@ -128,6 +130,7 @@ puts them back.
 | `loop run --all [-s source]` | Run every ready item, respecting `workflow.concurrency`. |
 | `loop watch [--pick] [dir...]` | Drive all active runs, of one or several projects; with `--pick` also start ready items. |
 | `loop status [-a]` | Runs and phases. |
+| `loop stats [--json]` | Merged PRs, fix rounds, cost, agent time and today's spend against `budget`. |
 | `loop logs <run> [--session] [-f]` | Run log, or an agent session transcript or prompt. |
 | `loop approve <run>` | Continue past a gate. |
 | `loop resume <run>` | Re-activate a blocked or failed run. |

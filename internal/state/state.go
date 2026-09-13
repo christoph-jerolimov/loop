@@ -276,6 +276,26 @@ func (r *Run) SummaryFile() string { return filepath.Join(r.dir, "summary.md") }
 // LogFile is the run-level log.
 func (r *Run) LogFile() string { return filepath.Join(r.dir, "run.log") }
 
+// Cost is what the run's sessions cost so far, as reported by the harness.
+func (r *Run) Cost() float64 {
+	var c float64
+	for _, s := range r.Sessions {
+		c += s.CostUSD
+	}
+	return c
+}
+
+// AgentTime is the wall clock the run's sessions used so far.
+func (r *Run) AgentTime() time.Duration {
+	var d time.Duration
+	for _, s := range r.Sessions {
+		if !s.Ended.IsZero() {
+			d += s.Ended.Sub(s.Started)
+		}
+	}
+	return d
+}
+
 // Log appends an event.
 func (r *Run) Log(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)

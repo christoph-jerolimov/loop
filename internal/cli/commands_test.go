@@ -325,3 +325,31 @@ func TestRunnerOverrideFromFlagAndEnvironment(t *testing.T) {
 		t.Errorf("without overrides loop.yaml decides: %v\n%s", err, out)
 	}
 }
+
+func TestStatsCommand(t *testing.T) {
+	p := newProject(t)
+	newRun(t, p, "auth", state.PhaseDone, func(r *state.Run) {
+		r.PR = &state.PR{Number: 7, Merged: true}
+		r.FixRounds = 2
+		r.Sessions = []state.Session{{Kind: "session", Started: time.Now().Add(-time.Minute), Ended: time.Now(), CostUSD: 2.5}}
+	})
+	newRun(t, p, "search", state.PhaseFailed, nil)
+	out, err := execute(t, p, "stats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"runs:            2 (done 1, failed 1)", "merged PRs:      1", "fix rounds:      2.0 per PR", "sessions:        1, 1m0s of agent time", "cost:            $2.50 total, $2.50 per merged PR", "today:           2 run(s), $2.50"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stats lacks %q:\n%s", want, out)
+		}
+	}
+	p.writeYAML(t, p.yaml+"budget:\n  daily_runs: 5\n  daily_cost: 10\n")
+	out, _ = execute(t, p, "stats")
+	if !strings.Contains(out, "today:           2 run(s) of 5, $2.50 of $10.00") {
+		t.Errorf("budget limits missing:\n%s", out)
+	}
+	out, err = execute(t, p, "stats", "--json")
+	if err != nil || !strings.Contains(out, `"merged": 1`) || !strings.Contains(out, `"cost_usd": 2.5`) {
+		t.Errorf("json: %v\n%s", err, out)
+	}
+}
