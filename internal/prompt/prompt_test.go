@@ -37,3 +37,12 @@ func TestDefaultTemplatesRender(t *testing.T) {
 		t.Error("comments section rendered without comments")
 	}
 }
+
+func TestDefaultTemplateText(t *testing.T) {
+	if !strings.Contains(Default(TplSession), "{{") {
+		t.Error("the embedded session template must contain template actions")
+	}
+	if Default("no-such-template") != "" {
+		t.Error("unknown templates must be empty")
+	}
+}

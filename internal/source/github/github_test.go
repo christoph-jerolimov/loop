@@ -240,3 +240,20 @@ func TestClaimReleaseClose(t *testing.T) {
 		t.Errorf("close: closed=%v comments=%v", f.closed, f.comments)
 	}
 }
+
+func TestCommentAndIdentity(t *testing.T) {
+	s, f := newSource(t)
+	it, err := s.Get(context.Background(), "12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Comment(context.Background(), it, "opened PR"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.comments, ",") != "opened PR" {
+		t.Errorf("comments = %v", f.comments)
+	}
+	if s.Name() != "gh" || s.Type() != "github" || !s.SupportsAutoClose() {
+		t.Errorf("identity: %s %s %v", s.Name(), s.Type(), s.SupportsAutoClose())
+	}
+}

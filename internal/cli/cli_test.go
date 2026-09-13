@@ -117,6 +117,11 @@ func git(t *testing.T, dir string, args ...string) {
 // their defaults before every call.
 func execute(t *testing.T, p *project, args ...string) (string, error) {
 	t.Helper()
+	return executeCtx(t, context.Background(), p, args...)
+}
+
+func executeCtx(t *testing.T, ctx context.Context, p *project, args ...string) (string, error) {
+	t.Helper()
 	resetFlags(root)
 	root.SetArgs(append([]string{"-C", p.dir}, args...))
 
@@ -132,7 +137,7 @@ func execute(t *testing.T, p *project, args ...string) (string, error) {
 		_, _ = io.Copy(&buf, r)
 		close(done)
 	}()
-	runErr := root.ExecuteContext(context.Background())
+	runErr := root.ExecuteContext(ctx)
 	os.Stdout = old
 	w.Close()
 	<-done
