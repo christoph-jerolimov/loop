@@ -545,7 +545,12 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	n := len(r.Sessions) + 1
 	logPath := filepath.Join(r.Dir(), fmt.Sprintf("session-%02d-%s.log", n, kind))
 	promptPath := filepath.Join(r.Dir(), fmt.Sprintf("session-%02d-%s.prompt.md", n, kind))
-	_ = os.WriteFile(promptPath, []byte(text), 0o644)
+	// The prompt is a file before it is anything else: the runner loads it
+	// from there, the session can read it again, and loop logs --prompt
+	// shows exactly what the agent received.
+	if err := os.WriteFile(promptPath, []byte(text), 0o644); err != nil {
+		return nil, fmt.Errorf("write prompt: %w", err)
+	}
 	logf, err := os.Create(logPath)
 	if err != nil {
 		return nil, err
@@ -554,13 +559,14 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	sess := state.Session{Kind: kind, Started: time.Now(), LogFile: logPath}
 	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name(), modelSuffix(model))
 	env := e.env(r)
+	env["LOOP_PROMPT_FILE"] = promptPath
 	for _, m := range extra {
 		for k, v := range m {
 			env[k] = v
 		}
 	}
 	res, err := e.Runner.Run(ctx, agent.Options{
-		Workdir: r.Workdir, Prompt: text, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
+		Workdir: r.Workdir, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
 		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough, ExtraArgs: e.Cfg.Agent.ExtraArgs,
 		Command: e.Cfg.Agent.Command, Log: logf, Progress: e.Out,
 	})

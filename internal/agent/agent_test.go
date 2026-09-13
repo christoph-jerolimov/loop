@@ -41,9 +41,20 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestClaudePromptOnStdin(t *testing.T) {
+// promptFile writes a prompt into the session folder and returns its path.
+func promptFile(t *testing.T, dir, text string) string {
+	t.Helper()
+	p := filepath.Join(dir, "session-01-session.prompt.md")
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestClaudeLoadsPromptFileOntoStdin(t *testing.T) {
 	dir := setupFake(t, "claude")
-	res, err := (Claude{}).Run(context.Background(), Options{Workdir: dir, Prompt: "do the thing", Model: "m1", MaxTurns: 3})
+	pf := promptFile(t, dir, "do the thing")
+	res, err := (Claude{}).Run(context.Background(), Options{Workdir: dir, PromptFile: pf, Model: "m1", MaxTurns: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,9 +67,11 @@ func TestClaudePromptOnStdin(t *testing.T) {
 	}
 }
 
-func TestCursorShortPromptAsArgument(t *testing.T) {
+func TestCursorPointsAtPromptFileAndPipesIt(t *testing.T) {
 	dir := setupFake(t, "agent")
-	res, err := (Cursor{}).Run(context.Background(), Options{Workdir: dir, Prompt: "short task", PromptFile: "/p.md"})
+	long := strings.Repeat("ticket comment line\n", 2000) // ~40 KiB, beyond any argv limit
+	pf := promptFile(t, dir, long)
+	res, err := (Cursor{}).Run(context.Background(), Options{Workdir: dir, PromptFile: pf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,26 +79,31 @@ func TestCursorShortPromptAsArgument(t *testing.T) {
 		t.Errorf("session id = %q, want the created chat id", res.SessionID)
 	}
 	argv := read(t, filepath.Join(dir, "argv"))
-	if !strings.HasSuffix(argv, "short task\n") || !strings.Contains(argv, "--resume\nchat-123") {
-		t.Errorf("unexpected argv:\n%s", argv)
-	}
-	if got := read(t, filepath.Join(dir, "stdin")); got != "" {
-		t.Errorf("short prompts must not use stdin, got %q", got)
-	}
-}
-
-func TestCursorLongPromptViaStdinAndFile(t *testing.T) {
-	dir := setupFake(t, "agent")
-	long := strings.Repeat("ticket comment line\n", 2000) // ~40 KiB
-	if _, err := (Cursor{}).Run(context.Background(), Options{Workdir: dir, Prompt: long, PromptFile: "/run/session-01.prompt.md"}); err != nil {
-		t.Fatal(err)
-	}
-	argv := read(t, filepath.Join(dir, "argv"))
-	if strings.Contains(argv, "ticket comment line") || !strings.Contains(argv, "/run/session-01.prompt.md") {
-		t.Errorf("long prompt must not be an argument; argv:\n%s", argv[:min(len(argv), 400)])
+	if strings.Contains(argv, "ticket comment line") || !strings.Contains(argv, "instructions are in the file "+pf) || !strings.Contains(argv, "--resume\nchat-123") {
+		t.Errorf("the argument must point at the prompt file; argv:\n%s", argv[:min(len(argv), 400)])
 	}
 	if got := read(t, filepath.Join(dir, "stdin")); got != long {
 		t.Errorf("stdin should carry the full prompt (%d bytes), got %d", len(long), len(got))
+	}
+}
+
+func TestRunnersRefuseMissingOrEmptyPrompts(t *testing.T) {
+	dir := setupFake(t, "claude")
+	setupFake(t, "agent")
+	for _, r := range []Runner{Claude{}, Cursor{}} {
+		if _, err := r.Run(context.Background(), Options{Workdir: dir}); err == nil || !strings.Contains(err.Error(), "no prompt file") {
+			t.Errorf("%s without a prompt file: %v", r.Name(), err)
+		}
+		if _, err := r.Run(context.Background(), Options{Workdir: dir, PromptFile: filepath.Join(dir, "missing.md")}); err == nil || !strings.Contains(err.Error(), "read prompt") {
+			t.Errorf("%s with a missing prompt file: %v", r.Name(), err)
+		}
+		empty := promptFile(t, dir, "  \n")
+		if _, err := r.Run(context.Background(), Options{Workdir: dir, PromptFile: empty}); err == nil || !strings.Contains(err.Error(), "is empty") {
+			t.Errorf("%s with an empty prompt file: %v", r.Name(), err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "argv")); !os.IsNotExist(err) {
+		t.Error("the CLI must not be started without a prompt")
 	}
 }
 
@@ -110,7 +128,7 @@ func TestSessionEnvWithholdsSecrets(t *testing.T) {
 	t.Setenv("MY_APP_DB", "postgres://x")
 	t.Setenv("OTHER_SECRET", "nope")
 	_, err := (Claude{}).Run(context.Background(), Options{
-		Workdir: dir, Prompt: "p",
+		Workdir: dir, PromptFile: promptFile(t, dir, "p"),
 		Env:            map[string]string{"LOOP_RUN_ID": "r1"},
 		EnvPassthrough: []string{"MY_APP_*"},
 	})

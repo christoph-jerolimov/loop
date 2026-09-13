@@ -177,6 +177,7 @@ git config user.email a@t; git config user.name a
 echo "$prompt" >> feature.txt
 git add -A && git commit -qm "agent work"
 printf '## Summary\nAgent did things.\n' >> "$LOOP_SUMMARY_FILE"
+echo "$LOOP_PROMPT_FILE" >> "$LOOP_RUN_DIR/prompt-files"
 if [ -n "$LOOP_REPLIES_FILE" ]; then printf '[{"id": 2, "reply": "Renamed as asked.", "resolved": true}]' > "$LOOP_REPLIES_FILE"; fi
 echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"session_id\":\"$sid\"}"
 `
@@ -400,6 +401,15 @@ func TestFullLifecycle(t *testing.T) {
 	}
 	if len(r.Sessions) != 3 {
 		t.Errorf("expected 3 agent sessions, got %d", len(r.Sessions))
+	}
+	promptFiles, _ := os.ReadFile(filepath.Join(r.Dir(), "prompt-files"))
+	for i, pf := range strings.Split(strings.TrimSpace(string(promptFiles)), "\n") {
+		if want := fmt.Sprintf("session-%02d-", i+1); !strings.HasPrefix(filepath.Base(pf), want) || !strings.HasSuffix(pf, ".prompt.md") {
+			t.Errorf("session %d got LOOP_PROMPT_FILE=%q", i+1, pf)
+		}
+		if b, err := os.ReadFile(pf); err != nil || len(b) == 0 {
+			t.Errorf("prompt file %s must exist with the prompt the session received: %v", pf, err)
+		}
 	}
 	verifyRuns, _ := os.ReadFile(filepath.Join(r.Dir(), "verify-runs"))
 	if n := strings.Count(string(verifyRuns), "run"); n != 3 {
