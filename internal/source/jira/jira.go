@@ -49,6 +49,7 @@ func (s *Source) convert(is *jiraapi.Issue) *item.Item {
 		Body:        is.Fields.Description,
 		URL:         strings.TrimRight(s.cfg.URL, "/") + "/browse/" + is.Key,
 		Labels:      is.Fields.Labels,
+		Priority:    item.ParsePriority(is.Fields.Priority.Name),
 		Created:     jiraapi.ParseTime(is.Fields.Created),
 		Closed:      is.Fields.Status.StatusCategory.Key == "done",
 		Extra:       map[string]string{"status": is.Fields.Status.Name},

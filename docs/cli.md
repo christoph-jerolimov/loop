@@ -36,8 +36,9 @@ whenever a run fails early.
 
 ## `loop list`
 
-Open items in pick-up order with a status column: `ready`, `blocked by …`,
-`in progress` or `running (<phase>)`.
+Open items in pick-up order (priority first, then source order, then
+oldest first) with a priority column and a status column: `ready`,
+`blocked by …`, `in progress` or `running (<phase>)`.
 
 | Flag | Meaning |
 | --- | --- |

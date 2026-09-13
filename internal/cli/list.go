@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/christoph-jerolimov/loop/internal/engine"
+	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 )
 
@@ -53,12 +54,12 @@ blocked by open dependencies, in progress (claimed), or already running.`,
 			return enc.Encode(rows)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "#\tID\tTITLE\tSTATUS\tDEPENDS ON")
+		fmt.Fprintln(tw, "#\tID\tTITLE\tPRIORITY\tSTATUS\tDEPENDS ON")
 		for i, it := range items {
 			if listReady && !it.Readiness.Ready {
 				continue
 			}
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n", i+1, it.Item.ID, prompt.Trunc(it.Item.Title, 60), status(it), strings.Join(it.Item.DependsOn, ", "))
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", i+1, it.Item.ID, prompt.Trunc(it.Item.Title, 60), item.PriorityName(it.Item.Priority), status(it), strings.Join(it.Item.DependsOn, ", "))
 		}
 		return tw.Flush()
 	},
@@ -128,6 +129,9 @@ var showCmd = &cobra.Command{
 		}
 		if it.Model != "" {
 			fmt.Printf("model:      %s\n", it.Model)
+		}
+		if it.Priority != 0 {
+			fmt.Printf("priority:   %s\n", item.PriorityName(it.Priority))
 		}
 		fmt.Printf("comments:   %d\n\n%s\n", len(it.Comments), it.Body)
 		return nil

@@ -5,6 +5,7 @@ package item
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -43,6 +44,9 @@ type Item struct {
 	DependsOn []string `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
 	// Model overrides the agent model for this item.
 	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+	// Priority orders items ahead of source order and age: 1 is the
+	// highest, 0 means none. See ParsePriority for the accepted spellings.
+	Priority int `json:"priority,omitempty" yaml:"priority,omitempty"`
 	// Extra carries source-specific values, e.g. the GitHub node id.
 	Extra map[string]string `json:"extra,omitempty" yaml:"extra,omitempty"`
 }
@@ -53,6 +57,8 @@ func MakeID(source, native string) string { return source + ":" + native }
 var (
 	dependsRe = regexp.MustCompile(`(?im)^\s*depends[ -]on:\s*(.+?)\s*$`)
 	modelRe   = regexp.MustCompile(`(?im)^\s*model:\s*(\S+)\s*$`)
+	prioRe    = regexp.MustCompile(`(?im)^\s*prio(?:rity)?:\s*(\S+)\s*$`)
+	labelRe   = regexp.MustCompile(`(?i)^prio(?:rity)?\s*[:/=-]\s*(.+)$`)
 	splitRe   = regexp.MustCompile(`[,\s]+`)
 )
 
@@ -80,6 +86,74 @@ func (it *Item) ApplyBodyDirectives() {
 	if it.Model == "" {
 		it.Model = model
 	}
+	if it.Priority == 0 {
+		if m := prioRe.FindStringSubmatch(it.Body); m != nil {
+			it.Priority = ParsePriority(m[1])
+		}
+	}
+}
+
+// ParsePriority turns a priority spelling into a rank: 1 is the highest.
+// Accepted: the numbers 1 to 9, P0 to P9 (P0 is 1), and the words
+// highest, critical, blocker, urgent (1), high (2), medium, normal,
+// major (3), low, minor (4), lowest, trivial (5). Anything else is 0.
+func ParsePriority(s string) int {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "highest", "critical", "blocker", "urgent":
+		return 1
+	case "high":
+		return 2
+	case "medium", "normal", "major":
+		return 3
+	case "low", "minor":
+		return 4
+	case "lowest", "trivial":
+		return 5
+	}
+	if len(s) == 2 && s[0] == 'p' && s[1] >= '0' && s[1] <= '9' {
+		return int(s[1]-'0') + 1
+	}
+	if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		return int(s[0] - '0')
+	}
+	return 0
+}
+
+// PriorityFromLabel reads a priority from a label such as "priority: high",
+// "priority/high", "prio-2" or "P1"; 0 when the label is not one.
+func PriorityFromLabel(label string) int {
+	if m := labelRe.FindStringSubmatch(strings.TrimSpace(label)); m != nil {
+		return ParsePriority(m[1])
+	}
+	return ParsePriority(label)
+}
+
+// PriorityName renders a rank for people: highest, high, medium, low,
+// lowest, the number for other ranks, and "" for none.
+func PriorityName(p int) string {
+	switch p {
+	case 0:
+		return ""
+	case 1:
+		return "highest"
+	case 2:
+		return "high"
+	case 3:
+		return "medium"
+	case 4:
+		return "low"
+	case 5:
+		return "lowest"
+	}
+	return strconv.Itoa(p)
+}
+
+func priorityRank(p int) int {
+	if p == 0 {
+		return 1 << 20 // unset sorts after every set priority
+	}
+	return p
 }
 
 func appendUnique(dst []string, src ...string) []string {
@@ -111,6 +185,9 @@ func (it *Item) HasLabel(l string) bool {
 func Order(items []*Item) {
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
+		if pa, pb := priorityRank(a.Priority), priorityRank(b.Priority); pa != pb {
+			return pa < pb
+		}
 		if a.SourceIndex != b.SourceIndex {
 			return a.SourceIndex < b.SourceIndex
 		}

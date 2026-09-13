@@ -26,7 +26,7 @@ func (f *fakeJira) handler(t *testing.T) http.Handler {
 			links = []map[string]any{}
 		}
 		return map[string]any{"id": "1", "key": key, "fields": map[string]any{
-			"summary": summary, "description": "Body of " + key + "\n\nDepends on: ABC-1", "labels": []string{"agent"}, "created": "2026-01-05T10:00:00.000+0000",
+			"summary": summary, "description": "Body of " + key + "\n\nDepends on: ABC-1", "labels": []string{"agent"}, "created": "2026-01-05T10:00:00.000+0000", "priority": map[string]any{"name": "High"},
 			"status":     map[string]any{"name": status, "statusCategory": map[string]any{"key": category}},
 			"issuelinks": links,
 			"comment": map[string]any{"comments": []any{
@@ -122,8 +122,8 @@ func TestListAndConvert(t *testing.T) {
 		t.Fatalf("items = %+v (done issues must be skipped)", items)
 	}
 	it := items[0]
-	if it.Title != "Rate limit" || it.SourceIndex != 2 || !strings.HasSuffix(it.URL, "/browse/ABC-7") || it.Created.IsZero() {
-		t.Errorf("item = %+v", it)
+	if it.Title != "Rate limit" || it.SourceIndex != 2 || !strings.HasSuffix(it.URL, "/browse/ABC-7") || it.Created.IsZero() || it.Priority != 2 {
+		t.Errorf("item = %+v (priority High is rank 2)", it)
 	}
 	if strings.Join(it.DependsOn, ",") != "ABC-2,ABC-1" {
 		t.Errorf("depends on = %v (inward blocked-by link plus body line, outward links ignored)", it.DependsOn)

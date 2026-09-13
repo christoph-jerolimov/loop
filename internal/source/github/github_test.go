@@ -61,7 +61,7 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 			pr["pull_request"] = map[string]any{"url": "x"}
 			write([]any{issue(12, "Add auth", "Build login.\n\ndepends on: #7", "open", "ready"), issue(14, "Wip", "", "open", "ready", "loop:in-progress"), pr})
 		case r.URL.Path == "/repos/o/r/issues/12" && r.Method == http.MethodGet:
-			write(issue(12, "Add auth", "Build login.\n\ndepends on: #7\nmodel: claude-opus-5", "open", "ready"))
+			write(issue(12, "Add auth", "Build login.\n\ndepends on: #7\nmodel: claude-opus-5", "open", "ready", "P1", "priority: low"))
 		case r.URL.Path == "/repos/o/r/issues/7" && r.Method == http.MethodGet:
 			write(issue(7, "Dependency", "", "closed"))
 		case r.URL.Path == "/repos/o/r/issues/12/comments" && r.Method == http.MethodGet:
@@ -191,8 +191,8 @@ func TestGetWithComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it.Model != "claude-opus-5" || it.URL != "https://github.com/o/r/issues/12" {
-		t.Errorf("item = %+v", it)
+	if it.Model != "claude-opus-5" || it.URL != "https://github.com/o/r/issues/12" || it.Priority != 2 {
+		t.Errorf("item = %+v (P1 beats priority: low)", it)
 	}
 	if len(it.Comments) != 5 || it.Comments[0].Author != "bob" {
 		t.Errorf("comments = %+v (claim marker must be filtered out)", it.Comments)
