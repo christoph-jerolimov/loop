@@ -45,30 +45,31 @@ func TestProgress(t *testing.T) {
 	}
 }
 
-func TestJoinCommandsAndNames(t *testing.T) {
-	if (Claude{}).Name() != "claude" || (Cursor{}).Name() != "cursor" {
-		t.Error("runner names")
-	}
+func TestJoinCommands(t *testing.T) {
 	cases := []struct {
-		runner Runner
+		runner string
 		dir    string
 		sid    string
 		want   string
 	}{
-		{Claude{}, "/work/auth", "abc-123", "cd /work/auth && claude --resume abc-123"},
-		{Claude{}, "/work/my project", "abc", "cd '/work/my project' && claude --resume abc"},
-		{Cursor{}, "/work/auth", "chat-1", "cd /work/auth && agent --resume chat-1"},
-		{Cursor{}, "/work/it's", "", `cd '/work/it'\''s' && agent`},
+		{"claude", "/work/auth", "abc-123", "cd /work/auth && claude --resume abc-123"},
+		{"claude", "/work/my project", "abc", "cd '/work/my project' && claude --resume abc"},
+		{"cursor", "/work/auth", "chat-1", "cd /work/auth && agent --resume chat-1"},
+		{"cursor", "/work/it's", "", `cd '/work/it'\''s' && agent`},
+		{"codex", "/work/auth", "thr_9", "cd /work/auth && codex resume thr_9"},
+		{"aider", "/work/auth", "", "cd /work/auth && aider"},
+		{"copilot", "/work/auth", "", "cd /work/auth && copilot --resume"},
 	}
 	for _, c := range cases {
-		if got := c.runner.JoinCommand(c.dir, c.sid); got != c.want {
-			t.Errorf("JoinCommand(%q, %q) = %q, want %q", c.dir, c.sid, got, c.want)
+		if got := runner(t, c.runner).JoinCommand(c.dir, c.sid); got != c.want {
+			t.Errorf("%s JoinCommand(%q, %q) = %q, want %q", c.runner, c.dir, c.sid, got, c.want)
 		}
 	}
-	if r, err := New("claude"); err != nil || r.Name() != "claude" {
-		t.Errorf("New(claude) = %v, %v", r, err)
+	custom, err := Resolve(Spec{Runner: Custom, Command: "./agent.sh", Args: []string{"{prompt_file}"}, PromptVia: PromptArgs})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := New("copilot"); err == nil {
-		t.Error("unknown runner must fail")
+	if got := custom.JoinCommand("/work/auth", "x"); got != "cd /work/auth" {
+		t.Errorf("custom runner without resume = %q", got)
 	}
 }

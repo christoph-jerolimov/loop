@@ -303,3 +303,25 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	<-done
 	return buf.String(), fnErr
 }
+
+func TestRunnerOverrideFromFlagAndEnvironment(t *testing.T) {
+	p := newProject(t)
+	// loop.yaml says claude; the environment and the flag override it, the flag winning.
+	t.Setenv("LOOP_RUNNER", "aider")
+	out, err := execute(t, p, "doctor")
+	if err == nil || !strings.Contains(out, "FAIL  aider runner: \"aider\" not found on PATH") || strings.Contains(out, "agent.allow") {
+		t.Errorf("LOOP_RUNNER must select the harness (and skip Claude's permission check): %v\n%s", err, out)
+	}
+	out, err = execute(t, p, "--runner", "codex", "doctor")
+	if err == nil || !strings.Contains(out, "FAIL  codex runner: \"codex\" not found on PATH") || strings.Contains(out, "aider") {
+		t.Errorf("--runner must win over LOOP_RUNNER: %v\n%s", err, out)
+	}
+	if _, err := execute(t, p, "--runner", "devin", "list"); err == nil || !strings.Contains(err.Error(), "agent.runner must be one of") {
+		t.Errorf("an unknown override is rejected like a bad loop.yaml: %v", err)
+	}
+	t.Setenv("LOOP_RUNNER", "")
+	out, err = execute(t, p, "doctor")
+	if err != nil || !strings.Contains(out, "claude runner: claude 9.9.9 (fake)") {
+		t.Errorf("without overrides loop.yaml decides: %v\n%s", err, out)
+	}
+}

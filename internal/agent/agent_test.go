@@ -41,6 +41,16 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
+// runner resolves a built-in profile without overrides.
+func runner(t *testing.T, name string) *Runner {
+	t.Helper()
+	r, err := Resolve(Spec{Runner: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 // promptFile writes a prompt into the session folder and returns its path.
 func promptFile(t *testing.T, dir, text string) string {
 	t.Helper()
@@ -54,7 +64,7 @@ func promptFile(t *testing.T, dir, text string) string {
 func TestClaudeLoadsPromptFileOntoStdin(t *testing.T) {
 	dir := setupFake(t, "claude")
 	pf := promptFile(t, dir, "do the thing")
-	res, err := (Claude{}).Run(context.Background(), Options{Workdir: dir, PromptFile: pf, Model: "m1", MaxTurns: 3})
+	res, err := runner(t, "claude").Run(context.Background(), Options{Workdir: dir, PromptFile: pf, Model: "m1", MaxTurns: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +81,7 @@ func TestCursorPointsAtPromptFileAndPipesIt(t *testing.T) {
 	dir := setupFake(t, "agent")
 	long := strings.Repeat("ticket comment line\n", 2000) // ~40 KiB, beyond any argv limit
 	pf := promptFile(t, dir, long)
-	res, err := (Cursor{}).Run(context.Background(), Options{Workdir: dir, PromptFile: pf})
+	res, err := runner(t, "cursor").Run(context.Background(), Options{Workdir: dir, PromptFile: pf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,16 +100,16 @@ func TestCursorPointsAtPromptFileAndPipesIt(t *testing.T) {
 func TestRunnersRefuseMissingOrEmptyPrompts(t *testing.T) {
 	dir := setupFake(t, "claude")
 	setupFake(t, "agent")
-	for _, r := range []Runner{Claude{}, Cursor{}} {
+	for _, r := range []*Runner{runner(t, "claude"), runner(t, "cursor")} {
 		if _, err := r.Run(context.Background(), Options{Workdir: dir}); err == nil || !strings.Contains(err.Error(), "no prompt file") {
-			t.Errorf("%s without a prompt file: %v", r.Name(), err)
+			t.Errorf("%s without a prompt file: %v", r.Name, err)
 		}
 		if _, err := r.Run(context.Background(), Options{Workdir: dir, PromptFile: filepath.Join(dir, "missing.md")}); err == nil || !strings.Contains(err.Error(), "read prompt") {
-			t.Errorf("%s with a missing prompt file: %v", r.Name(), err)
+			t.Errorf("%s with a missing prompt file: %v", r.Name, err)
 		}
 		empty := promptFile(t, dir, "  \n")
 		if _, err := r.Run(context.Background(), Options{Workdir: dir, PromptFile: empty}); err == nil || !strings.Contains(err.Error(), "is empty") {
-			t.Errorf("%s with an empty prompt file: %v", r.Name(), err)
+			t.Errorf("%s with an empty prompt file: %v", r.Name, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "argv")); !os.IsNotExist(err) {
@@ -127,7 +137,7 @@ func TestSessionEnvWithholdsSecrets(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-agent")
 	t.Setenv("MY_APP_DB", "postgres://x")
 	t.Setenv("OTHER_SECRET", "nope")
-	_, err := (Claude{}).Run(context.Background(), Options{
+	_, err := runner(t, "claude").Run(context.Background(), Options{
 		Workdir: dir, PromptFile: promptFile(t, dir, "p"),
 		Env:            map[string]string{"LOOP_RUN_ID": "r1"},
 		EnvPassthrough: []string{"MY_APP_*"},

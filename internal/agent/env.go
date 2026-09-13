@@ -24,7 +24,8 @@ var baseEnv = []string{
 	"CARGO_HOME", "RUSTUP_HOME", "JAVA_HOME", "MAVEN_*", "GRADLE_*", "PYTHONPATH", "VIRTUAL_ENV", "PIP_*", "UV_*",
 	"DOCKER_HOST", "COMPOSE_*",
 	// the agent CLIs' own configuration and credentials
-	"ANTHROPIC_*", "CLAUDE_*", "CLAUDE_CODE_*", "CURSOR_*",
+	"ANTHROPIC_*", "CLAUDE_*", "CLAUDE_CODE_*", "CURSOR_*", "OPENAI_*", "CODEX_*", "GEMINI_*", "GOOGLE_*",
+	"AIDER_*", "OPENCODE_*", "COPILOT_*", "AMP_*",
 	// windows
 	"SYSTEMROOT", "SystemRoot", "WINDIR", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "PROGRAMFILES", "PROGRAMFILES(X86)",
 	"PROGRAMDATA", "COMSPEC", "PATHEXT", "HOMEDRIVE", "HOMEPATH", "SYSTEMDRIVE",

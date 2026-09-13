@@ -1,13 +1,14 @@
 # loop
 
 `loop` picks ideas, goals or tickets from a backlog, starts an AI coding
-agent (Claude Code or Cursor) in a fresh checkout of your repository, opens a
-pull request, and keeps working that PR through CI failures and review
-comments until it is merged and the ticket is closed.
+agent (Claude Code, Cursor, Codex, Gemini CLI, Aider, OpenCode, Copilot
+CLI, Amp or a script of your own) in a fresh checkout of your repository,
+opens a pull request, and keeps working that PR through CI failures and
+review comments until it is merged and the ticket is closed.
 
 ```
 backlog ──▶ checkout ──▶ agent session ──▶ verify ──▶ PR ──▶ monitor ──▶ merge ──▶ close ticket
- (md/GitHub/Jira)  (worktree)   (claude/cursor)  (steps)         (CI, reviews, conflicts → fix rounds)
+ (md/GitHub/Jira)  (worktree)   (any harness)    (steps)         (CI, reviews, conflicts → fix rounds)
 ```
 
 ## Install
@@ -23,8 +24,10 @@ go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 
 `loop --version` prints the release version.
 
-Requirements: `git`, one of `claude` (Claude Code CLI) or `agent` (Cursor
-CLI), and a GitHub token (`GITHUB_TOKEN`, or `gh auth login`). Jira needs
+Requirements: `git`, the CLI of the harness you pick (`claude`, Cursor's
+`agent`, `codex`, `gemini`, `aider`, `opencode`, `copilot` or `amp`; or
+any script for `runner: custom`), and a GitHub token (`GITHUB_TOKEN`, or
+`gh auth login`). Jira needs
 `JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud) or `JIRA_TOKEN` (Server). On
 Windows, `run:` steps need an `sh` on the `PATH` (Git for Windows provides
 one); `script:` and `agent:` steps do not.
@@ -74,7 +77,10 @@ git-ignored.
    shell commands, script files from the project folder, or agent sessions.
    Configured skill folders are symlinked into `.claude/skills/`. The repository's own
    `CLAUDE.md`, `AGENTS.md` or `.cursor/rules` are picked up by the agent as
-   usual.
+   usual. The harness comes from `agent.runner`, or from `--runner` and
+   `LOOP_RUNNER` for one invocation; a `custom` runner is any command that
+   reads the prompt file and commits its work
+   (see [harnesses](docs/configuration.md#harnesses)).
 4. **Session.** The session prompt template is rendered with the item (and
    its ticket comments, if the template uses them; on GitHub only comments
    by the owner and collaborators with write access, by default), written

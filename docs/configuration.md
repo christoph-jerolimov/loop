@@ -92,19 +92,101 @@ See [prompts.md](prompts.md).
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `runner` | `claude` | `claude` (Claude Code CLI) or `cursor` (Cursor `agent` CLI). |
-| `command` | runner name | Executable override. |
+| `runner` | `claude` | The harness: `claude`, `cursor`, `codex`, `gemini`, `aider`, `opencode`, `copilot`, `amp` or `custom`. `--runner` and `LOOP_RUNNER` override it per invocation. See [harnesses](#harnesses). |
+| `command` | profile default | Executable override (a name on the `PATH` or a path). |
+| `args` | profile default | Argument template; required for `custom`. See [harnesses](#harnesses). |
+| `prompt_via` | profile default | How the prompt reaches the CLI: `stdin`, `args` or `both`. |
+| `session_id` | profile default | How loop learns the resumable session id: `uuid`, `none`, `run:<args>` or `json:<key>`. |
+| `resume` | profile default | Command a human runs in the workdir to continue the session; `loop join` prints it. |
 | `model` | runner default | Model for every session. Items override it with a `model:` line or frontmatter. |
-| `permission_mode` | `acceptEdits` | Claude only: `default`, `acceptEdits`, `bypassPermissions` or `plan`. Written to the workdir settings and passed to `claude --permission-mode`. |
+| `permission_mode` | `acceptEdits` | Claude only: `default`, `acceptEdits`, `bypassPermissions` or `plan`. Written to the workdir settings and passed to `claude --permission-mode`. Other harnesses run with their own auto-approve flag (see below). |
 | `allow` | git defaults | Claude only: permission rules the headless session may use without prompting, for example `Bash(npm test:*)`. See below. |
 | `deny` | `git push`, `gh pr`, `gh api`, `git reset --hard` | Claude only: rules the session may never use. |
 | `timeout` | `45m` | Wall clock limit per session. |
-| `max_turns` | `200` | Passed to `claude --max-turns`. |
+| `max_turns` | `200` | Passed to `claude --max-turns`; other profiles ignore it unless their `args` use `{max_turns}`. |
 | `attempts` | `2` | Attempts for the initial session before the run fails. |
 | `skills` | none | Folders symlinked into `<workdir>/.claude/skills/`. The links are kept out of git through the repository's `info/exclude`. |
 | `env` | none | Extra environment variables for sessions and steps. |
 | `env_passthrough` | none | Variable names or globs (`DATABASE_URL`, `MY_APP_*`) sessions inherit from loop's environment on top of the built-in allowlist. See below. |
-| `extra_args` | none | Extra CLI arguments. |
+| `extra_args` | none | Extra CLI arguments, appended after the template. |
+
+### Harnesses
+
+One generic runner drives every harness. A profile is four things: the
+command line, how the prompt travels, how the session id is learned, and
+how a human resumes the session. The built-in profiles:
+
+| `runner` | Command line | Prompt | Session id, resume |
+| --- | --- | --- | --- |
+| `claude` | `claude -p --output-format stream-json --verbose --session-id {session} --permission-mode {permission_mode} --model {model} --max-turns {max_turns}` | stdin | pre-assigned UUID; `claude --resume {session}` |
+| `cursor` | `agent -p --force --output-format stream-json --resume {session} --model {model} {prompt}` | both | `agent create-chat` first; `agent --resume {session}` |
+| `codex` | `codex exec --json --full-auto --model {model} {prompt}` | args | `thread_id` from the JSON output; `codex resume {session}` |
+| `gemini` | `gemini --output-format stream-json --yolo --model {model} -p {prompt}` | args | `session_id` from the JSON output; `gemini --resume {session}` |
+| `aider` | `aider --message-file {prompt_file} --yes-always --no-check-update --model {model}` | args (file) | none; `aider` reopens the folder's chat history |
+| `opencode` | `opencode run --format json --model {model} {prompt}` | args | `sessionID` from the JSON output; `opencode --session {session}` |
+| `copilot` | `copilot --allow-all-tools --model {model} -p {prompt}` | args | none; `copilot --resume` |
+| `amp` | `amp -x --stream-json --dangerously-allow-all` | stdin | none; `amp threads continue` |
+
+Placeholders in `args`: `{prompt}` (the prompt text, or a one-line pointer
+at the prompt file when the text exceeds 16 KiB, so the command line never
+hits the operating system's argument limit), `{prompt_file}`, `{model}`,
+`{max_turns}`, `{permission_mode}`, `{session}` and `{workdir}`. An
+argument that is only a placeholder without a value disappears together
+with the flag before it, which is why `--model {model}` is harmless when no
+model is configured.
+
+`prompt_via` says whether the prompt file's content is piped on standard
+input (`stdin`), substituted into the arguments (`args`), or both (`both`:
+the content on stdin and `{prompt}` replaced by the pointer, for CLIs that
+read either). `session_id` is `uuid` (loop generates the id and
+substitutes `{session}` before the start), `run:<args>` (loop runs the
+command with these arguments first and takes its output as the id),
+`json:<key>` (the id is read from that key of any JSON line the CLI prints)
+or `none`.
+
+Claude Code and Cursor are exercised by loop's own tests against fake CLIs
+that speak their protocols. The other profiles follow the headless modes
+those CLIs document; every field can be overridden, so a renamed flag is a
+one-line change in `loop.yaml` rather than a new loop release:
+
+```yaml
+agent:
+  runner: codex
+  command: /opt/codex/bin/codex   # override just the executable
+  resume: "codex exec resume {session}"
+```
+
+A harness loop does not know is a `custom` runner. `command` and `args`
+are required; `prompt_via` defaults to `stdin`, `session_id` to `none`:
+
+```yaml
+agent:
+  runner: custom
+  command: ./hooks/agent.sh
+  args: ["--task", "{prompt_file}", "--model", "{model}"]
+  prompt_via: args
+  session_id: json:session   # the script prints {"session": "..."} on stdout
+  resume: "./hooks/agent.sh --continue {session}"
+```
+
+The script runs in the workdir with the session environment (see below)
+plus `LOOP_PROMPT_FILE`, must commit its work, and signals failure with a
+non-zero exit code. JSON lines on stdout are optional: a Claude-style
+`{"type":"result","is_error":false}` line reports the outcome, an
+`assistant` message or an `item` with a `text` shows up as progress, and
+the `session_id` key is read from any line.
+
+`--runner <name>` on any command, or `LOOP_RUNNER=<name>` in the
+environment, selects the harness for that invocation without editing
+`loop.yaml`; the flag wins over the variable. Both accept a built-in name
+or `custom`, and the rest of `agent` stays as configured.
+
+Authentication is the harness's own business: `loop doctor` checks that
+the command is on the `PATH`, and each CLI reads its credentials from its
+usual place (`ANTHROPIC_*`, `OPENAI_*`, `GEMINI_*`, `GOOGLE_*`, `CURSOR_*`,
+`COPILOT_*`, `AMP_*` and the like are passed through). Copilot CLI
+authenticates with `copilot login`; loop withholds `GITHUB_TOKEN` and
+`GH_TOKEN` from sessions on purpose, so do not expect them there.
 
 ### Permissions in headless sessions
 
@@ -134,15 +216,22 @@ Setting `allow` replaces the defaults; include the git rules you still
 want. `permission_mode: bypassPermissions` skips all checks and is the
 quickest way to get a first run going in a sandbox, at the cost of the
 agent being able to run anything. `loop doctor` warns when only the default
-rules are configured. The Cursor runner always runs with `--force`, which
-is Cursor's equivalent of bypassing permissions.
+rules are configured. The other harnesses have no equivalent of a rules
+file; their profiles run with the CLI's own auto-approve flag (`--force`
+for Cursor, `--full-auto` for Codex, `--yolo` for Gemini, `--yes-always`
+for Aider, `--allow-all-tools` for Copilot, `--dangerously-allow-all` for
+Amp), because a headless session that stops to ask never finishes. Verify
+steps, the withheld credentials and the merge gates are what keep that
+safe.
 
 ### Environment of a session
 
 Agent sessions do not inherit loop's whole environment. They get an
 allowlist: shell and locale basics, proxy settings, git identity variables,
 the toolchain variables of Go, Node, Rust, Java and Python, the agent CLIs'
-own configuration and credentials (`ANTHROPIC_*`, `CLAUDE_*`, `CURSOR_*`),
+own configuration and credentials (`ANTHROPIC_*`, `CLAUDE_*`, `CURSOR_*`,
+`OPENAI_*`, `CODEX_*`, `GEMINI_*`, `GOOGLE_*`, `AIDER_*`, `OPENCODE_*`,
+`COPILOT_*`, `AMP_*`),
 the `LOOP_*` variables and `agent.env`. `GITHUB_TOKEN`, `GH_TOKEN`,
 `JIRA_*` and anything else are withheld, so an agent cannot push, merge or
 comment with loop's credentials. Name what else your project needs in
@@ -156,12 +245,10 @@ agent:
 `run:` and `script:` steps are your own scripts and keep the full
 environment; `agent:` steps are sessions and get the allowlist.
 
-How the prompt reaches the agent: `claude` receives it on standard input
-with a pre-assigned session id. `agent` (Cursor) receives short prompts
-as the positional argument; long ones (over 16 KiB, typical for tickets
-with comment threads) are piped on standard input while the positional
-argument points at the prompt file in the run folder, so the command line
-never exceeds the operating system's argument limit.
+How the prompt reaches the agent is part of the harness profile (see
+[harnesses](#harnesses)): every prompt is a file in the run folder first,
+and the profile says whether the CLI gets it on standard input, as an
+argument, or as the file's path.
 
 ## `steps`
 

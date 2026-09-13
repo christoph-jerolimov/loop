@@ -34,9 +34,9 @@ Every prompt is a file before it is anything else. The rendered template
 for the initial session, a CI or review fix round, a conflict round, a
 verify round or an agent step is written to
 `.loop/runs/<run>/session-NN-<kind>.prompt.md` first, and the agent CLI
-loads it from there: Claude receives the file's content on standard
-input, Cursor receives the content on standard input plus a one-line
-instruction naming the file. The session sees the path as
+loads it from there in the way its [harness profile](configuration.md#harnesses)
+says: on standard input, as an argument, or as the file's path, with long
+prompts replaced by a one-line pointer at the file. The session sees the path as
 `LOOP_PROMPT_FILE`, so the agent (or a hook) can read the instructions
 again at any point. `loop logs <run> --prompt` prints the same file, so
 what you inspect is exactly what the agent received. A prompt that cannot

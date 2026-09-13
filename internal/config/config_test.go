@@ -105,3 +105,34 @@ func TestCommentsPolicy(t *testing.T) {
 		t.Errorf("writers on markdown: %v", err)
 	}
 }
+
+func TestAgentRunnerValidation(t *testing.T) {
+	load := func(t *testing.T, agent string) error {
+		t.Helper()
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, FileName), []byte("repo:\n  url: git@github.com:acme/widgets.git\nsources:\n  - type: markdown\nagent:\n"+agent), 0o644)
+		_, err := Load(dir)
+		return err
+	}
+	for _, name := range []string{"claude", "cursor", "codex", "gemini", "aider", "opencode", "copilot", "amp"} {
+		if err := load(t, "  runner: "+name+"\n"); err != nil {
+			t.Errorf("runner %s: %v", name, err)
+		}
+	}
+	if err := load(t, "  runner: devin\n"); err == nil || !strings.Contains(err.Error(), "agent.runner must be one of claude, cursor, codex, gemini, aider, opencode, copilot, amp or custom") {
+		t.Errorf("unknown runner: %v", err)
+	}
+	if err := load(t, "  runner: custom\n  command: ./hooks/agent.sh\n"); err == nil || !strings.Contains(err.Error(), "needs agent.command and agent.args") {
+		t.Errorf("custom without args: %v", err)
+	}
+	if err := load(t, "  runner: custom\n  command: ./hooks/agent.sh\n  args: [\"{prompt_file}\"]\n  prompt_via: args\n  session_id: json:id\n  resume: \"./hooks/agent.sh --continue {session}\"\n"); err != nil {
+		t.Errorf("complete custom runner: %v", err)
+	}
+	// permission_mode is validated only for the harness that uses it.
+	if err := load(t, "  runner: codex\n  permission_mode: whatever\n"); err != nil {
+		t.Errorf("permission_mode is Claude only: %v", err)
+	}
+	if err := load(t, "  runner: claude\n  permission_mode: whatever\n"); err == nil || !strings.Contains(err.Error(), "agent.permission_mode must be one of") {
+		t.Errorf("claude permission_mode: %v", err)
+	}
+}
