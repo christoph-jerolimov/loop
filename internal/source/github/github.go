@@ -3,6 +3,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -19,8 +20,11 @@ type Source struct {
 	index int
 	api   *ghapi.Client
 
-	// comments caches the effective setting when loop.yaml leaves it unset.
-	comments *bool
+	// perms caches collaborator permission lookups by login for the
+	// writers policy; permErr remembers a forbidden lookup so the API is
+	// not asked again for every comment.
+	perms   map[string]string
+	permErr error
 }
 
 // New creates the source; the client is created lazily so listing local
@@ -79,6 +83,9 @@ func (s *Source) convert(ctx context.Context, is *ghapi.Issue, withComments bool
 				it.ClaimedBy = strings.TrimSpace(strings.TrimPrefix(strings.SplitN(cm.Body, "\n", 2)[0], claimMarker))
 				continue
 			}
+			if s.policy() == config.CommentsWriters && !s.trusted(ctx, api, cm) {
+				continue
+			}
 			it.Comments = append(it.Comments, item.Comment{Author: cm.User.Login, Body: cm.Body, Created: cm.CreatedAt, URL: cm.HTMLURL})
 		}
 	}
@@ -124,43 +131,72 @@ func (s *Source) Get(ctx context.Context, native string) (*item.Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.convert(ctx, is, s.CommentsEnabled(ctx))
+	return s.convert(ctx, is, s.policy().Loaded())
 }
 
-// CommentsEnabled reports whether ticket comments are loaded. An explicit
-// comments: setting wins; otherwise comments are loaded only on private
-// repositories, since on a public one anyone can write them and they reach
-// the agent verbatim. When the repository cannot be read the safe answer
-// is no.
-func (s *Source) CommentsEnabled(ctx context.Context) bool {
-	if s.cfg.Comments != nil {
-		return *s.cfg.Comments
+// policy returns the comments policy, writers when loop.yaml left it unset.
+func (s *Source) policy() config.CommentsPolicy {
+	if s.cfg.Comments == "" {
+		return config.CommentsWriters
 	}
-	if s.comments != nil {
-		return *s.comments
+	return s.cfg.Comments
+}
+
+// trusted reports whether a comment author may steer the agent under the
+// writers policy: the repository owner, or a member or collaborator whose
+// permission on the repository allows pushing. The author association on
+// the comment settles the clear cases; only members and collaborators need
+// a permission lookup, which requires push access for loop's own token.
+func (s *Source) trusted(ctx context.Context, api *ghapi.Client, cm ghapi.Comment) bool {
+	switch cm.AuthorAssociation {
+	case "OWNER":
+		return true
+	case "MEMBER", "COLLABORATOR", "":
+		return s.canPush(ctx, api, cm.User.Login)
+	default: // CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE
+		return false
 	}
-	enabled := false
-	if api, err := s.client(); err == nil {
-		if repo, err := api.GetRepository(ctx); err == nil {
-			enabled = repo.Private
+}
+
+func (s *Source) canPush(ctx context.Context, api *ghapi.Client, login string) bool {
+	if p, ok := s.perms[login]; ok {
+		return ghapi.CanPush(p)
+	}
+	if s.permErr != nil {
+		return false
+	}
+	p, err := api.CollaboratorPermission(ctx, login)
+	if err != nil {
+		// A 403 means the token cannot look up permissions at all (no push
+		// access); remember it. Anything else may be transient, so the next
+		// comment tries again.
+		var ge *ghapi.Error
+		if errors.As(err, &ge) && ge.Status == 403 {
+			s.permErr = err
 		}
+		return false
 	}
-	s.comments = &enabled
-	return enabled
+	if s.perms == nil {
+		s.perms = map[string]string{}
+	}
+	s.perms[login] = p
+	return ghapi.CanPush(p)
 }
 
 // CommentsReason explains the effective comments setting for loop doctor.
 func (s *Source) CommentsReason(ctx context.Context) string {
-	if s.cfg.Comments != nil {
-		if *s.cfg.Comments {
-			return "loaded (comments: true)"
+	switch s.policy() {
+	case config.CommentsNone:
+		return "not loaded (comments: none)"
+	case config.CommentsAll:
+		return "loaded from everyone (comments: all)"
+	}
+	if api, err := s.client(); err == nil {
+		if repo, err := api.GetRepository(ctx); err == nil && !repo.Permissions.Push {
+			return "loaded from the repository owner only (comments: writers, but the token has no push access, so collaborator permissions cannot be looked up)"
 		}
-		return "not loaded (comments: false)"
 	}
-	if s.CommentsEnabled(ctx) {
-		return "loaded (private repository)"
-	}
-	return "not loaded (public repository; set comments: true to load them)"
+	return "loaded from the repository owner and collaborators with write access (comments: writers)"
 }
 
 var (

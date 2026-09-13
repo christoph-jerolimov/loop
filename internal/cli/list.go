@@ -103,7 +103,7 @@ var showCmd = &cobra.Command{
 		}
 		if showPrompt {
 			d := &prompt.Data{Project: a.Cfg.Name, Item: it, Branch: "<branch>", Base: a.Cfg.Repo.Base, Workdir: "<workdir>", RunID: "<run>", SummaryFile: "<summary.md>", Attempt: 1}
-			if sc := a.Cfg.Source(it.Source); sc != nil && sc.Comments != nil && !*sc.Comments {
+			if sc := a.Cfg.Source(it.Source); sc != nil && !sc.Comments.Loaded() {
 				it.Comments = nil
 			}
 			text, err := prompt.RenderFile(prompt.TplSession, a.Cfg.Resolve(a.Cfg.Prompts.Session), d)

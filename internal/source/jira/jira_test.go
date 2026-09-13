@@ -90,8 +90,7 @@ func newSource(t *testing.T) (*Source, *fakeJira) {
 	t.Setenv("JIRA_API_TOKEN", "x")
 	cfg := config.SourceConfig{Name: "jira", Type: "jira", URL: srv.URL, JQL: "project = ABC", Labels: []string{"agent"}, Claim: true, ClaimLabel: "loop-in-progress",
 		Transitions: map[string]string{"in_progress": "In Progress", "done": "Done"}}
-	tr := true
-	cfg.Comments = &tr
+	cfg.Comments = config.CommentsAll
 	return New(cfg, 2), f
 }
 

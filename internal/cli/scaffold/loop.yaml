@@ -21,7 +21,7 @@ sources:
     # repo: my-org/my-service   (defaults to repo.url)
     labels: [ready-for-agent]   # recommended: only pick explicitly marked issues
     claim_label: loop:in-progress
-    comments: true              # load issue comments into the prompt data
+    comments: writers           # all | writers (owner + write access, default) | none
 
   # - name: jira
   #   type: jira

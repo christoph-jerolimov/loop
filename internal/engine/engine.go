@@ -519,7 +519,7 @@ func (e *Engine) data(r *state.Run) *prompt.Data {
 		Project: e.Cfg.Name, Item: r.Item, Branch: r.Branch, Base: e.Cfg.Repo.Base, Workdir: r.Workdir,
 		RunID: r.ID, SummaryFile: r.SummaryFile(), Attempt: r.Attempt, Round: r.FixRounds,
 	}
-	if sc := e.Cfg.Source(r.Item.Source); sc != nil && sc.Comments != nil && !*sc.Comments {
+	if sc := e.Cfg.Source(r.Item.Source); sc != nil && !sc.Comments.Loaded() {
 		cp := *r.Item
 		cp.Comments = nil
 		d.Item = &cp

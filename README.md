@@ -76,8 +76,9 @@ git-ignored.
    `CLAUDE.md`, `AGENTS.md` or `.cursor/rules` are picked up by the agent as
    usual.
 4. **Session.** The session prompt template is rendered with the item (and
-   its ticket comments, if the template uses them) and the agent runs
-   headlessly. The agent commits its work and writes a PR summary. Up to
+   its ticket comments, if the template uses them; on GitHub only comments
+   by the owner and collaborators with write access, by default) and the
+   agent runs headlessly. The agent commits its work and writes a PR summary. Up to
    `agent.attempts` tries. Join a running or finished session at any time:
    `loop join <run>` prints `cd <workdir> && claude --resume <id>`.
 5. **Verify.** `steps.verify` scripts run; a failing one starts a fix session

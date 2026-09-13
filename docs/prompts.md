@@ -10,7 +10,7 @@ prints the rendered session prompt for an item.
 | --- | --- | --- |
 | `.Project` | string | all |
 | `.Item` | item: `.ID`, `.NativeID`, `.Source`, `.Title`, `.Body`, `.URL`, `.Labels`, `.Created`, `.DependsOn`, `.Comments` | all |
-| `.Item.Comments` | list of `.Author`, `.Body`, `.Created`, `.URL` | all (empty when the source sets `comments: false`) |
+| `.Item.Comments` | list of `.Author`, `.Body`, `.Created`, `.URL` | all (empty when the source sets `comments: none`) |
 | `.Branch`, `.Base`, `.Workdir`, `.RunID` | string | all |
 | `.SummaryFile` | path the agent should write the PR summary to | all |
 | `.Attempt` | attempt number of the initial session | session |
@@ -42,10 +42,11 @@ session template, not by code. Two ready-made variants:
 
 Copy one to `prompts/session.md`, or point `prompts.session` at it. If you
 never want comments loaded at all (for example to keep the prompt small),
-set `comments: false` on the source; `.Item.Comments` is then always empty.
-On public GitHub repositories comments are not loaded unless the source
-sets `comments: true`, because anyone can write them and they reach the
-agent verbatim; see [security](security.md).
+set `comments: none` on the source; `.Item.Comments` is then always empty.
+On GitHub only comments by the repository owner and by collaborators with
+write access are loaded unless the source sets `comments: all`, because
+anyone can write them and they reach the agent verbatim; see
+[security](security.md).
 
 The same pattern applies to fix rounds: the review, CI and conflict
 templates receive the feedback as data and decide how to present it.

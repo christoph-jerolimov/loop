@@ -185,6 +185,9 @@ type Comment struct {
 	User      User      `json:"user"`
 	HTMLURL   string    `json:"html_url"`
 	CreatedAt time.Time `json:"created_at"`
+	// AuthorAssociation is GitHub's relationship of the author to the
+	// repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE, ...
+	AuthorAssociation string `json:"author_association"`
 }
 
 // ListIssues returns open issues (not PRs) carrying all labels, oldest first.

@@ -44,11 +44,16 @@ What limits the damage:
 What you decide:
 
 - **Who can write tickets.** On a public GitHub repository anyone can
-  comment on an issue. loop therefore loads issue comments only when the
-  repository is private, unless the source sets `comments: true`
-  explicitly. Markdown backlogs are in your own repository and Jira is
-  behind your own accounts, so their comments are loaded by default.
-  `loop doctor` reports the effective setting per source.
+  comment on an issue. loop therefore loads, by default, only comments
+  written by the repository owner or by collaborators with write access
+  (`comments: writers`). The author's association on the comment settles
+  the clear cases; for organisation members and collaborators loop looks
+  up their permission on the repository, which needs push access for
+  loop's own token. Without it only the owner's comments are loaded. Set
+  `comments: all` to load every comment, or `comments: none` for none.
+  Markdown backlogs are in your own repository and Jira is behind your own
+  accounts, so their comments are loaded by default. `loop doctor` reports
+  the effective setting per source.
 - **Which labels qualify.** The recommended `labels: [ready-for-agent]`
   filter means only issues a maintainer labelled are picked up, whatever
   their author.

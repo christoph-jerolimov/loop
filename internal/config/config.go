@@ -105,12 +105,47 @@ type SourceConfig struct {
 	Labels     []string `yaml:"labels"`
 	Claim      bool     `yaml:"claim"`
 	ClaimLabel string   `yaml:"claim_label"`
-	// Comments controls whether ticket comments are loaded into the prompt
-	// data. Unset means: yes for markdown and Jira; for GitHub only when the
-	// repository is private, because on a public repository anyone can
-	// comment and comments reach the agent verbatim.
-	Comments *bool `yaml:"comments"`
+	// Comments says whose ticket comments are loaded into the prompt data.
+	// Unset means all for markdown and Jira and writers for GitHub: only
+	// comments by the repository owner and by collaborators with write
+	// access, because anyone can comment on a public repository and
+	// comments reach the agent verbatim.
+	Comments CommentsPolicy `yaml:"comments"`
 }
+
+// CommentsPolicy says whose ticket comments are loaded.
+type CommentsPolicy string
+
+const (
+	// CommentsAll loads every comment.
+	CommentsAll CommentsPolicy = "all"
+	// CommentsWriters loads comments by the repository owner and by
+	// collaborators with write access (GitHub only).
+	CommentsWriters CommentsPolicy = "writers"
+	// CommentsNone loads no comments.
+	CommentsNone CommentsPolicy = "none"
+)
+
+// UnmarshalYAML accepts the policy names and, for compatibility, the
+// booleans true (all) and false (none).
+func (p *CommentsPolicy) UnmarshalYAML(n *yaml.Node) error {
+	switch strings.ToLower(strings.TrimSpace(n.Value)) {
+	case "", "~", "null":
+		*p = ""
+	case "all", "true", "yes", "on":
+		*p = CommentsAll
+	case "writers", "write":
+		*p = CommentsWriters
+	case "none", "false", "no", "off":
+		*p = CommentsNone
+	default:
+		return fmt.Errorf("comments must be all, writers or none, got %q", n.Value)
+	}
+	return nil
+}
+
+// Loaded reports whether any comments are loaded under the policy.
+func (p CommentsPolicy) Loaded() bool { return p != CommentsNone }
 
 // Prompts points to template files, relative to loop.yaml. Empty values
 // fall back to the embedded defaults.
@@ -395,9 +430,12 @@ func (c *Config) ApplyDefaults() {
 		if s.Claim && s.ClaimLabel == "" && s.Type != "markdown" {
 			s.ClaimLabel = "loop:in-progress"
 		}
-		if s.Comments == nil && s.Type != "github" {
-			t := true
-			s.Comments = &t
+		if s.Comments == "" {
+			if s.Type == "github" {
+				s.Comments = CommentsWriters
+			} else {
+				s.Comments = CommentsAll
+			}
 		}
 	}
 	if c.Agent.Runner == "" {
@@ -497,6 +535,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("duplicate source name %q", s.Name))
 		}
 		seen[s.Name] = true
+		if s.Comments == CommentsWriters && s.Type != "github" {
+			errs = append(errs, fmt.Errorf("source %s: comments: writers is only supported by github sources", s.Name))
+		}
 		switch s.Type {
 		case "markdown":
 		case "github":
