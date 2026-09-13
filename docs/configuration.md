@@ -331,6 +331,7 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `concurrency` | `1` | Runs in an agent, verify or fix phase at the same time. |
 | `required_checks` | all | Only these check names decide green or red. |
 | `ci_log_lines` | `200` | Lines from the end of a failed GitHub Actions job log passed to the CI fix prompt. `0` disables log fetching. |
+| `ci_rerun` | `true` | Re-run the failed GitHub Actions jobs once per head commit before starting a CI fix round, so a flaky job does not cost an agent session. Checks from other apps cannot be re-run. |
 | `cleanup` | `true` | Remove the workdir when the item is closed. |
 | `pr_commands` | `true` | Let collaborators with push access drive a run from the PR: `/loop approve` releases a gate, `/loop resume` restarts a blocked run. |
 | `on_human_push` | `pause` | What happens when someone other than loop pushes to the run branch: `pause` parks the run with a note on the PR, `continue` fast-forwards the worktree and keeps driving on top of their commits. See [workflow](workflow.md#phases). |

@@ -294,6 +294,9 @@ type Workflow struct {
 	// CILogLines is how many lines from the end of a failed Actions job log
 	// are passed to the CI fix prompt. 0 disables log fetching.
 	CILogLines *int `yaml:"ci_log_lines"`
+	// CIRerun re-runs the failed Actions jobs once per head commit before a
+	// CI fix round, so a flaky job does not cost an agent session.
+	CIRerun *bool `yaml:"ci_rerun"`
 	// Cleanup removes the workdir once the item is closed.
 	Cleanup *bool `yaml:"cleanup"`
 	// PRCommands lets collaborators with push access drive a run from the
@@ -559,6 +562,10 @@ func (c *Config) ApplyDefaults() {
 	if c.Workflow.CILogLines == nil {
 		n := 200
 		c.Workflow.CILogLines = &n
+	}
+	if c.Workflow.CIRerun == nil {
+		t := true
+		c.Workflow.CIRerun = &t
 	}
 	if c.Workflow.OnHumanPush == "" {
 		c.Workflow.OnHumanPush = HumanPushPause

@@ -65,7 +65,11 @@ func TestHumanPushParksTheRunUntilResumed(t *testing.T) {
 }
 
 func TestHumanPushCanBeFollowed(t *testing.T) {
-	lc := newLifecycle(t, func(cfg *config.Config) { cfg.Workflow.OnHumanPush = config.HumanPushContinue })
+	lc := newLifecycle(t, func(cfg *config.Config) {
+		cfg.Workflow.OnHumanPush = config.HumanPushContinue
+		f := false
+		cfg.Workflow.CIRerun = &f
+	})
 	lc.drive(t, state.PhaseMonitor)
 	r := lc.run
 	sha := humanPush(t, lc, "bob")

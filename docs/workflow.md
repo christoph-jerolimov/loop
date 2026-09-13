@@ -33,7 +33,10 @@ order:
    same comment never triggers twice. After the round loop replies in each
    inline thread with what the session did and resolves the threads the
    session reported as done (see [prompts](prompts.md#answering-reviewers)).
-5. **Red CI** on the current head → `fix` with the `ci` template, once per
+5. **Red CI** on the current head → first, with `workflow.ci_rerun: true`
+   (the default), the failed GitHub Actions jobs are re-run once for this
+   head and loop looks again on the next poll, so a flaky job does not
+   cost an agent session. Still red → `fix` with the `ci` template, once per
    head commit. For checks that are GitHub Actions jobs, the last
    `workflow.ci_log_lines` lines of the job log are part of the prompt, with
    timestamps and colour codes stripped.

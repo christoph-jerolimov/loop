@@ -121,6 +121,9 @@ func (e *Engine) closingKeyword(r *state.Run) string {
 type ciState struct {
 	Pending bool
 	Failed  []prompt.Check
+	// workflowRuns are the Actions workflow runs behind the failed checks,
+	// the ones loop can ask to re-run.
+	workflowRuns []int64
 }
 
 func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState, error) {
@@ -148,6 +151,9 @@ func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState,
 				url = c.DetailsURL
 			}
 			st.Failed = append(st.Failed, prompt.Check{Name: c.Name, Conclusion: c.Conclusion, URL: url, Summary: c.Output.Summary, Text: c.Output.Text, Log: e.jobLog(ctx, gh, c)})
+			if id := c.WorkflowRunID(); id != 0 && !containsID(st.workflowRuns, id) {
+				st.workflowRuns = append(st.workflowRuns, id)
+			}
 		}
 	}
 	_, statuses, err := gh.CombinedStatus(ctx, sha)
@@ -214,6 +220,8 @@ type feedback struct {
 	reviewIDs      []int64
 	commentIDs     []int64
 }
+
+func containsID(ids []int64, id int64) bool { return contains(ids, id) }
 
 func contains(ids []int64, id int64) bool {
 	for _, x := range ids {
@@ -356,6 +364,18 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	if len(st.Failed) > 0 {
 		if r.LastCIFixSHA == pr.Head.SHA {
 			return true, nil // already tried this head; wait for humans or new pushes
+		}
+		if *e.Cfg.Workflow.CIRerun && r.CIRerunSHA != pr.Head.SHA && len(st.workflowRuns) > 0 {
+			// A flaky job should not cost an agent session: re-run the
+			// failed jobs once and look again on the next poll.
+			r.CIRerunSHA = pr.Head.SHA
+			for _, id := range st.workflowRuns {
+				if err := gh.RerunFailedJobs(ctx, id); err != nil {
+					e.logf(r, "re-run failed jobs of workflow run %d: %v", id, err)
+				}
+			}
+			e.logf(r, "CI red on %s: re-running the failed jobs once before a fix round", pr.Head.SHA[:min(7, len(pr.Head.SHA))])
+			return true, nil
 		}
 		if r.FixRounds >= e.Cfg.Workflow.FixRounds {
 			return e.blockOrWait(ctx, r, "CI red but fix rounds (%d) are used up", e.Cfg.Workflow.FixRounds)
