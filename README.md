@@ -102,7 +102,8 @@ git-ignored.
    that fails, by an agent session. New review comments or a red CI start a
    fix session driven by the review or CI prompt template, with the failing
    job's log included; failed Actions jobs are re-run once first, so a
-   flaky job costs no session. The verify steps run again before the result is
+   flaky job costs no session. A commit status named `loop` on the PR
+   shows the phase, fix rounds and outcome next to CI. The verify steps run again before the result is
    pushed, and every inline review thread gets a reply with what was done;
    threads the agent reports as done are resolved. Once CI is green a draft PR is marked ready for review.
    If a person pushes to the branch, loop stops driving the PR and leaves

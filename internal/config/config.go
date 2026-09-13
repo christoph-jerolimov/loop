@@ -297,6 +297,9 @@ type Workflow struct {
 	// CIRerun re-runs the failed Actions jobs once per head commit before a
 	// CI fix round, so a flaky job does not cost an agent session.
 	CIRerun *bool `yaml:"ci_rerun"`
+	// PRStatus posts loop's phase, fix rounds and outcome as a commit
+	// status named "loop" on the PR head, so reviewers see it on GitHub.
+	PRStatus *bool `yaml:"pr_status"`
 	// Cleanup removes the workdir once the item is closed.
 	Cleanup *bool `yaml:"cleanup"`
 	// PRCommands lets collaborators with push access drive a run from the
@@ -562,6 +565,10 @@ func (c *Config) ApplyDefaults() {
 	if c.Workflow.CILogLines == nil {
 		n := 200
 		c.Workflow.CILogLines = &n
+	}
+	if c.Workflow.PRStatus == nil {
+		t := true
+		c.Workflow.PRStatus = &t
 	}
 	if c.Workflow.CIRerun == nil {
 		t := true

@@ -167,6 +167,7 @@ func (e *Engine) Drive(ctx context.Context, r *state.Run) error {
 			return ctx.Err()
 		}
 		wait, err := e.Step(ctx, r)
+		e.reportStatus(ctx, r)
 		if serr := e.Store.Save(r); serr != nil {
 			return serr
 		}

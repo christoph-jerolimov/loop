@@ -95,6 +95,9 @@ type Run struct {
 	HandledReviews  []int64   `json:"handled_reviews,omitempty" yaml:"handled_reviews,omitempty"`
 	LastPushSHA     string    `json:"last_push_sha,omitempty" yaml:"last_push_sha,omitempty"`
 	LastCIFixSHA    string    `json:"last_ci_fix_sha,omitempty" yaml:"last_ci_fix_sha,omitempty"`
+	// LastStatus is the last "sha state description" posted as the loop
+	// commit status, so unchanged state is not posted again every poll.
+	LastStatus string `json:"last_status,omitempty" yaml:"last_status,omitempty"`
 	// CIRerunSHA is the head whose failed jobs were already re-run once.
 	CIRerunSHA string `json:"ci_rerun_sha,omitempty" yaml:"ci_rerun_sha,omitempty"`
 	// PollFailures counts consecutive failed polls; it stretches the next

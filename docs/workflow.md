@@ -99,6 +99,19 @@ opened. The round is free: it does not count against `workflow.fix_rounds`,
 and it runs once per run. Reviewers see fewer obvious mistakes; the cost is
 one extra session per run.
 
+## Loop's status on the PR
+
+With `workflow.pr_status: true` (the default) loop posts a commit status
+named `loop` on the PR head after every step that changes something:
+`pending` while it monitors (with the fix rounds used), waits at a gate,
+runs a fix round or merges; `success` once the PR is merged and the
+ticket closed; `error` when the run is blocked and `failure` when it
+failed, each with the reason. Reviewers see it in the checks list of the
+PR next to CI, and `loop resume` updates it again. A commit status works
+with a user token, which a check run would not. loop ignores its own
+status when it decides whether CI is green, and branch protection ignores
+it too unless you make `loop` a required status on purpose.
+
 ## API errors and rate limits
 
 Every GitHub and Jira call retries network errors, 5xx responses and

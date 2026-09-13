@@ -33,8 +33,10 @@ type fakeGitHub struct {
 	commits      []map[string]any
 	// reruns counts rerun-failed-jobs calls; flaky turns the failed check
 	// green on the re-run.
-	reruns    int
-	flaky     bool
+	reruns int
+	flaky  bool
+	// statuses records every commit status posted, as "state: description".
+	statuses  []string
 	checks    []map[string]any
 	reviews   []map[string]any
 	rcomments []map[string]any
@@ -88,9 +90,13 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 				t.Errorf("PR body missing template content: %q", in["body"])
 			}
 			f.prHead, _ = in["head"].(string)
+			sha := f.headSHA()
+			if sha == "" {
+				sha = "sha1"
+			}
 			f.pr = map[string]any{"number": 7, "node_id": "PR_7", "title": in["title"], "body": in["body"], "state": "open",
 				"draft": in["draft"], "merged": false, "mergeable": true, "mergeable_state": "clean", "html_url": "https://gh/o/r/pull/7",
-				"head": map[string]any{"ref": in["head"], "sha": "sha1"}, "base": map[string]any{"ref": "main"}}
+				"head": map[string]any{"ref": in["head"], "sha": sha}, "base": map[string]any{"ref": "main"}}
 			write(f.pr)
 		case p == "/repos/o/r/pulls" && r.Method == http.MethodGet:
 			write([]any{})
@@ -163,7 +169,20 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 		case strings.HasPrefix(p, "/repos/o/r/commits/") && strings.HasSuffix(p, "/check-runs"):
 			write(map[string]any{"total_count": len(f.checks), "check_runs": f.checks})
 		case strings.HasPrefix(p, "/repos/o/r/commits/") && strings.HasSuffix(p, "/status"):
-			write(map[string]any{"state": "success", "statuses": []any{}})
+			var own []any
+			if n := len(f.statuses); n > 0 {
+				st, desc, _ := strings.Cut(f.statuses[n-1], ": ")
+				own = append(own, map[string]any{"context": "loop", "state": st, "description": desc})
+			}
+			write(map[string]any{"state": "success", "statuses": own})
+		case strings.HasPrefix(p, "/repos/o/r/statuses/") && r.Method == http.MethodPost:
+			var in map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			if in["context"] != "loop" || len(in["description"]) > 140 {
+				t.Errorf("status = %v", in)
+			}
+			f.statuses = append(f.statuses, in["state"]+": "+in["description"])
+			write(map[string]any{})
 		case p == "/repos/o/r/pulls/7/merge":
 			f.mergeCall++
 			f.merged = true
@@ -488,6 +507,15 @@ func TestFullLifecycle(t *testing.T) {
 	}
 	if len(r.Sessions) != 3 {
 		t.Errorf("expected 3 agent sessions, got %d", len(r.Sessions))
+	}
+	joined := strings.Join(gh.statuses, "\n")
+	for _, want := range []string{"pending: monitoring; fix rounds 0/3", "pending: fix round 1/3 (ci)", "pending: fix round 2/3 (review)", "pending: merging; fix rounds 2/3", "success: merged and ticket closed; fix rounds 2/3"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("PR statuses lack %q:\n%s", want, joined)
+		}
+	}
+	if len(gh.statuses) > 12 {
+		t.Errorf("unchanged state must not be posted again every poll, got %d statuses:\n%s", len(gh.statuses), joined)
 	}
 	promptFiles, _ := os.ReadFile(filepath.Join(r.Dir(), "prompt-files"))
 	for i, pf := range strings.Split(strings.TrimSpace(string(promptFiles)), "\n") {

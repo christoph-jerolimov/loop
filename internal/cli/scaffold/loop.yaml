@@ -110,4 +110,5 @@ workflow:
   gates: []                  # before-code, before-pr, before-fix, before-merge (loop approve <run>)
   on_human_push: pause       # pause: park when a person pushes to the branch | continue
   ci_rerun: true             # re-run failed Actions jobs once before a CI fix round
+  pr_status: true            # post phase and outcome as a "loop" commit status on the PR
   concurrency: 1

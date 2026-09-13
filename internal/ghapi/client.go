@@ -550,6 +550,19 @@ type Status struct {
 	TargetURL   string `json:"target_url"`
 }
 
+// SetStatus posts a commit status (state: pending, success, failure or
+// error). Unlike check runs, statuses can be written with a user token.
+func (c *Client) SetStatus(ctx context.Context, sha, context, state, description, targetURL string) error {
+	if len(description) > 140 {
+		description = description[:137] + "..."
+	}
+	in := map[string]string{"state": state, "context": context, "description": description}
+	if targetURL != "" {
+		in["target_url"] = targetURL
+	}
+	return c.do(ctx, http.MethodPost, c.repoPath("/statuses/%s", sha), in, nil)
+}
+
 // CombinedStatus returns the legacy statuses for a commit.
 func (c *Client) CombinedStatus(ctx context.Context, sha string) (string, []Status, error) {
 	var resp struct {
