@@ -93,7 +93,9 @@ git-ignored.
    `agent.attempts` tries. Join a running or finished session at any time:
    `loop join <run>` prints `cd <workdir> && claude --resume <id>`.
 6. **Verify.** `steps.verify` scripts run; a failing one starts a fix session
-   with the output, then verification restarts.
+   with the output, then verification restarts. With `workflow.self_review`
+   a second session then reviews the diff and its findings get one free fix
+   round before anyone else sees the branch.
 7. **PR.** The branch is pushed and a (draft) PR is opened from a template,
    linked to the ticket (`Closes #n` for GitHub issues).
 8. **Monitor.** The PR is polled. A merge conflict is merged with git or, if

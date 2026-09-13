@@ -228,6 +228,12 @@ const fakeAgent = `#!/bin/sh
 prompt=$(cat)
 sid=""
 while [ $# -gt 0 ]; do case "$1" in --session-id) sid="$2"; shift;; esac; shift; done
+if [ -n "$LOOP_FINDINGS_FILE" ]; then
+  if [ -n "$FAKE_CLEAN_REVIEW" ]; then echo "No findings." > "$LOOP_FINDINGS_FILE"; else printf -- '- feature.txt: missing the closing note\n' > "$LOOP_FINDINGS_FILE"; fi
+  echo probe > review-scratch.txt
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"reviewed\",\"session_id\":\"$sid\",\"total_cost_usd\":0.5}"
+  exit 0
+fi
 if [ -n "$LOOP_PLAN_FILE" ]; then
   printf '1. Goal: feature.txt exists.\n2. Estimate: S, one session.\n' > "$LOOP_PLAN_FILE"
   echo scratch > scratch.txt

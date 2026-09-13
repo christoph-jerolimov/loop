@@ -18,13 +18,14 @@ var Templates embed.FS
 // Template names, matching the files in templates/ and the keys in
 // loop.yaml prompts:.
 const (
-	TplSession  = "session"
-	TplPlan     = "plan"
-	TplReview   = "review"
-	TplCI       = "ci"
-	TplConflict = "conflict"
-	TplVerify   = "verify"
-	TplPRBody   = "pr-body"
+	TplSession    = "session"
+	TplPlan       = "plan"
+	TplSelfReview = "self-review"
+	TplReview     = "review"
+	TplCI         = "ci"
+	TplConflict   = "conflict"
+	TplVerify     = "verify"
+	TplPRBody     = "pr-body"
 )
 
 // Review is a submitted PR review.
@@ -93,6 +94,10 @@ type Data struct {
 	// plan's text once it exists, for the session template.
 	PlanFile string
 	Plan     string
+	// Diff and FindingsFile drive the self-review session: the branch's
+	// diff against the base, and where the session writes its findings.
+	Diff         string
+	FindingsFile string
 }
 
 var funcs = template.FuncMap{

@@ -82,6 +82,7 @@ Paths to template files; missing keys use the built-in defaults
 | --- | --- |
 | `session` | The initial implementation session. |
 | `plan` | The planning session before the implementation (`workflow.plan: true`). |
+| `self_review` | The review of the branch before the PR opens (`workflow.self_review: true`). |
 | `review` | Fix rounds triggered by reviews and PR comments. |
 | `ci` | Fix rounds triggered by failing checks. |
 | `conflict` | Resolving merge conflicts git could not resolve. |
@@ -326,6 +327,7 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `close_issue_on_merge` | `true` | Close the ticket after the merge. When `false`, loop waits until someone closes it. |
 | `gates` | `[]` (`[before-merge]` for auto merge policies) | Pause points: `before-code`, `before-pr`, `before-fix`, `before-merge`. |
 | `plan` | `false` | Run a planning session first and post the plan on the ticket; with the `before-code` gate the run waits for a human to approve it. See [plan before code](workflow.md#plan-before-code). |
+| `self_review` | `false` | Let a second session review the diff before the PR opens and fix its findings in one free round. See [self-review](workflow.md#self-review-before-the-pr). |
 | `concurrency` | `1` | Runs in an agent, verify or fix phase at the same time. |
 | `required_checks` | all | Only these check names decide green or red. |
 | `ci_log_lines` | `200` | Lines from the end of a failed GitHub Actions job log passed to the CI fix prompt. `0` disables log fetching. |

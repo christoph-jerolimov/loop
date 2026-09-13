@@ -37,6 +37,7 @@ sources:
 prompts:
   session: prompts/session.md
   plan: prompts/plan.md
+  self_review: prompts/self-review.md
   review: prompts/review.md
   ci: prompts/ci.md
   conflict: prompts/conflict.md
@@ -105,6 +106,7 @@ workflow:
   delete_branch: true
   close_issue_on_merge: true # item is done only when the ticket is closed
   plan: false                # planning session first; the plan is posted on the ticket
+  self_review: false         # a second session reviews the diff before the PR opens
   gates: []                  # before-code, before-pr, before-fix, before-merge (loop approve <run>)
   on_human_push: pause       # pause: park when a person pushes to the branch | continue
   concurrency: 1

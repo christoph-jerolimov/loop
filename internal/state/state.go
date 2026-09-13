@@ -101,6 +101,9 @@ type Run struct {
 	// MergeAttempts counts merge calls GitHub rejected as not mergeable.
 	MergeAttempts int `json:"merge_attempts,omitempty" yaml:"merge_attempts,omitempty"`
 
+	// SelfReviewed records that the self-review before the PR ran.
+	SelfReviewed bool `json:"self_reviewed,omitempty" yaml:"self_reviewed,omitempty"`
+
 	// Gate is the gate the run waits at; GateApproved is set by `loop approve`.
 	Gate         string `json:"gate,omitempty" yaml:"gate,omitempty"`
 	GateApproved string `json:"gate_approved,omitempty" yaml:"gate_approved,omitempty"`
@@ -273,6 +276,9 @@ func (r *Run) Dir() string { return r.dir }
 
 // SummaryFile is where the agent writes the PR summary.
 func (r *Run) SummaryFile() string { return filepath.Join(r.dir, "summary.md") }
+
+// FindingsFile is where a self-review session writes its findings.
+func (r *Run) FindingsFile() string { return filepath.Join(r.dir, "findings.md") }
 
 // PlanFile is where a plan session writes its plan.
 func (r *Run) PlanFile() string { return filepath.Join(r.dir, "plan.md") }

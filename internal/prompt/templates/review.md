@@ -1,5 +1,5 @@
 You are working in the repository at {{ .Workdir }} on branch `{{ .Branch }}`.
-Pull request {{ .PR.URL }} for "{{ .Item.Title }}" received review feedback. Address every point below, then commit. Do not push.
+{{ if .PR }}Pull request {{ .PR.URL }} for "{{ .Item.Title }}" received review feedback.{{ else }}A review of the branch for "{{ .Item.Title }}", done before the pull request is opened, found the issues below.{{ end }} Address every point below, then commit. Do not push.
 {{ if .Reviews }}
 ## Reviews
 {{ range .Reviews }}

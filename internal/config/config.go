@@ -157,12 +157,13 @@ func (a Agent) Spec() agent.Spec {
 // Prompts points to template files, relative to loop.yaml. Empty values
 // fall back to the embedded defaults.
 type Prompts struct {
-	Session  string `yaml:"session"`
-	Plan     string `yaml:"plan"`
-	Review   string `yaml:"review"`
-	CI       string `yaml:"ci"`
-	Conflict string `yaml:"conflict"`
-	Verify   string `yaml:"verify"`
+	Session    string `yaml:"session"`
+	Plan       string `yaml:"plan"`
+	SelfReview string `yaml:"self_review"`
+	Review     string `yaml:"review"`
+	CI         string `yaml:"ci"`
+	Conflict   string `yaml:"conflict"`
+	Verify     string `yaml:"verify"`
 }
 
 // Agent configures the coding agent runner.
@@ -304,6 +305,9 @@ type Workflow struct {
 	// loop posts it on the ticket. With the before-code gate, the run then
 	// waits for a human to approve the plan.
 	Plan bool `yaml:"plan"`
+	// SelfReview reviews the branch's diff in a separate session after
+	// verify and hands the findings to one fix round before the PR opens.
+	SelfReview bool `yaml:"self_review"`
 	// OnHumanPush says what happens when someone other than loop pushes to
 	// the run branch: pause (park the run with a note, the default) or
 	// continue (fast-forward the worktree and keep driving on top).
