@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/christoph-jerolimov/loop/internal/config"
+	"github.com/christoph-jerolimov/loop/internal/item"
 )
 
 func write(t *testing.T, dir, name, content string) {
@@ -123,4 +124,69 @@ func readFile(t *testing.T, dir, name string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestCommentAppendsLoopLog(t *testing.T) {
+	dir := t.TempDir()
+	// No trailing newline: the log must still start on its own line.
+	write(t, dir, "auth.md", "---\ntitle: Add auth\nlabels: [ready]\n---\nBuild login.")
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown"}, 0, dir)
+	it, err := s.Get(context.Background(), "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Comment(context.Background(), it, "  opened https://github.com/o/r/pull/1  \n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Comment(context.Background(), it, "merged"); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(readFile(t, dir, "auth.md"))
+	if strings.Count(raw, "## Loop log") != 1 {
+		t.Errorf("the log heading must be written once:\n%s", raw)
+	}
+	if !strings.HasPrefix(raw, "---\ntitle: Add auth\nlabels: [ready]\n---\nBuild login.\n\n## Loop log\n\n- ") {
+		t.Errorf("frontmatter, body and heading not preserved in order:\n%s", raw)
+	}
+	opened := strings.Index(raw, ": opened https://github.com/o/r/pull/1\n")
+	merged := strings.Index(raw, ": merged\n")
+	if opened < 0 || merged < 0 || merged < opened {
+		t.Errorf("entries missing, untrimmed or out of order:\n%s", raw)
+	}
+	if !strings.HasSuffix(raw, ": merged\n") {
+		t.Errorf("file must end with the last entry and a newline:\n%q", raw)
+	}
+	// The item still parses, with the log as part of its body.
+	it, err = s.Get(context.Background(), "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.Title != "Add auth" || !it.HasLabel("ready") || !strings.Contains(it.Body, "## Loop log") {
+		t.Errorf("item after comments: %+v", it)
+	}
+}
+
+func TestCommentKeepsExistingLoopLog(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "auth.md", "# Auth\n\nBody.\n\n## Loop log\n\n- 2026-01-01 10:00: earlier entry\n")
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown"}, 0, dir)
+	it, err := s.Get(context.Background(), "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Comment(context.Background(), it, "later entry"); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(readFile(t, dir, "auth.md"))
+	if strings.Count(raw, "## Loop log") != 1 || !strings.Contains(raw, "- 2026-01-01 10:00: earlier entry\n\n- ") || !strings.HasSuffix(raw, ": later entry\n") {
+		t.Errorf("entry must be appended under the existing heading:\n%s", raw)
+	}
+}
+
+func TestCommentUnknownItem(t *testing.T) {
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown"}, 0, t.TempDir())
+	err := s.Comment(context.Background(), &item.Item{NativeID: "missing"}, "x")
+	if err == nil {
+		t.Error("commenting on a missing file must fail")
+	}
 }
