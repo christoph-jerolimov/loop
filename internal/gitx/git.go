@@ -176,6 +176,19 @@ func FastForward(ctx context.Context, dir, remote, branch string) error {
 	return err
 }
 
+// Diff returns the branch's diff against origin/base, cut to max bytes
+// with a note when longer.
+func Diff(ctx context.Context, dir, base string, max int) (string, error) {
+	out, err := Run(ctx, dir, "diff", "origin/"+base+"...HEAD")
+	if err != nil {
+		return "", err
+	}
+	if max > 0 && len(out) > max {
+		out = out[:max] + "\n[diff truncated]"
+	}
+	return out, nil
+}
+
 // HeadSHA returns the current commit.
 func HeadSHA(ctx context.Context, dir string) (string, error) {
 	return Run(ctx, dir, "rev-parse", "HEAD")

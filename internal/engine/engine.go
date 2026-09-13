@@ -740,11 +740,81 @@ func (e *Engine) verify(ctx context.Context, r *state.Run) (bool, error) {
 		e.abandon(ctx, r, err)
 		return false, err
 	}
+	if e.Cfg.Workflow.SelfReview && !r.SelfReviewed {
+		if err := e.selfReview(ctx, r); err != nil {
+			e.abandon(ctx, r, err)
+			return false, err
+		}
+	}
 	if !e.gate(r, config.GateBeforePR) {
 		return true, nil
 	}
 	r.SetPhase(state.PhasePR, "")
 	return false, nil
+}
+
+// maxReviewDiff bounds the diff handed to the self-review session.
+const maxReviewDiff = 200 << 10
+
+// selfReview lets a second session review the branch's diff and hands its
+// findings to one fix round, then verifies again. It runs once per run and
+// does not count against workflow.fix_rounds.
+func (e *Engine) selfReview(ctx context.Context, r *state.Run) error {
+	r.SelfReviewed = true
+	diff, err := gitx.Diff(ctx, r.Workdir, e.Cfg.Repo.Base, maxReviewDiff)
+	if err != nil {
+		return err
+	}
+	d := e.data(r)
+	d.Diff = diff
+	d.FindingsFile = r.FindingsFile()
+	text, err := prompt.RenderFile(prompt.TplSelfReview, e.Cfg.Resolve(e.Cfg.Prompts.SelfReview), d)
+	if err != nil {
+		return err
+	}
+	res, err := e.runAgent(ctx, r, "self-review", text, "", 0, map[string]string{"LOOP_FINDINGS_FILE": r.FindingsFile()})
+	if err != nil {
+		return fmt.Errorf("self-review session: %w", err)
+	}
+	// The review must not change the branch.
+	if dirty, _ := gitx.HasUncommitted(ctx, r.Workdir); dirty {
+		_, _ = gitx.Run(ctx, r.Workdir, "checkout", "--", ".")
+		_, _ = gitx.Run(ctx, r.Workdir, "clean", "-fdq")
+	}
+	findings, _ := os.ReadFile(r.FindingsFile())
+	if len(strings.TrimSpace(string(findings))) == 0 {
+		findings = []byte(strings.TrimSpace(res.Output))
+	}
+	if noFindings(string(findings)) {
+		e.logf(r, "self-review found nothing to send back")
+		return nil
+	}
+	e.logf(r, "self-review found issues; running one fix round")
+	d = e.data(r)
+	d.Reviews = []prompt.Review{{Author: "self-review", State: "CHANGES_REQUESTED", Body: strings.TrimSpace(string(findings))}}
+	text, err = prompt.RenderFile(prompt.TplReview, e.Cfg.Resolve(e.Cfg.Prompts.Review), d)
+	if err != nil {
+		return err
+	}
+	if _, err := e.runAgent(ctx, r, "self-review-fix", text, "", 0); err != nil {
+		return fmt.Errorf("self-review fix session: %w", err)
+	}
+	if err := e.commitLeftovers(ctx, r, "loop: address self-review findings"); err != nil {
+		return err
+	}
+	return e.runVerify(ctx, r)
+}
+
+// noFindings reports whether a findings text says there is nothing to fix.
+func noFindings(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimSpace(strings.TrimLeft(s, "-*# "))
+	s = strings.TrimRight(s, ".! ")
+	switch s {
+	case "", "no findings", "none", "nothing":
+		return true
+	}
+	return false
 }
 
 // runVerify runs steps.verify until they all pass. A failing run or

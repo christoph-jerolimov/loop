@@ -3,7 +3,7 @@
 ## Phases
 
 ```
-queued → checkout → setup → [plan] → [gate before-code] → session → verify → [gate before-pr] → pr
+queued → checkout → setup → [plan] → [gate before-code] → session → verify → [self-review] → [gate before-pr] → pr
       → monitor ⇄ [gate before-fix] fix → [gate before-merge] merge → close → cleanup → done
 ```
 
@@ -83,6 +83,18 @@ the repository a `/loop approve` comment on the issue by a collaborator
 with push access does the same. Anything the plan session leaves in the
 worktree is discarded before the implementation starts. The gate works
 without the plan too: it then simply holds the run before the session.
+
+## Self-review before the PR
+
+With `workflow.self_review: true` a second session reviews the branch
+before it becomes a pull request. It gets the ticket and the diff against
+the base (driven by the `self_review` template), may run the tests, but
+changes nothing; it writes its findings into `findings.md` in the run
+folder, or `No findings.`. Findings are handed to one fix round with the
+`review` template, the verify steps run again, and only then is the PR
+opened. The round is free: it does not count against `workflow.fix_rounds`,
+and it runs once per run. Reviewers see fewer obvious mistakes; the cost is
+one extra session per run.
 
 ## API errors and rate limits
 

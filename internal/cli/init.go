@@ -43,7 +43,7 @@ var initCmd = &cobra.Command{
 				return err
 			}
 		}
-		for _, name := range []string{prompt.TplSession, prompt.TplPlan, prompt.TplReview, prompt.TplCI, prompt.TplConflict, prompt.TplVerify, prompt.TplPRBody} {
+		for _, name := range []string{prompt.TplSession, prompt.TplPlan, prompt.TplSelfReview, prompt.TplReview, prompt.TplCI, prompt.TplConflict, prompt.TplVerify, prompt.TplPRBody} {
 			if err := writeNew(filepath.Join(dir, "prompts", name+".md"), []byte(prompt.Default(name))); err != nil {
 				return err
 			}
