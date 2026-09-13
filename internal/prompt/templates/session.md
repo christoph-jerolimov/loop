@@ -14,7 +14,13 @@ Labels: {{ join .Item.Labels ", " }}
 {{ range .Item.Comments }}
 **{{ .Author }}** ({{ .Created.Format "2006-01-02" }}):
 {{ quote .Body }}
-{{ end }}{{ end }}
+{{ end }}{{ end }}{{ if .Plan }}
+## Plan
+
+This plan was written before the implementation and approved; follow it unless the code proves it wrong, and say so in the summary if you deviate.
+
+{{ .Plan }}
+{{ end }}
 ## Rules
 
 - Follow the conventions of the repository (CLAUDE.md, AGENTS.md, .cursor/rules, contributing docs).

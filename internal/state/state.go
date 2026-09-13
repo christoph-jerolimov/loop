@@ -23,6 +23,7 @@ const (
 	PhaseQueued   Phase = "queued"
 	PhaseCheckout Phase = "checkout"
 	PhaseSetup    Phase = "setup"
+	PhasePlan     Phase = "plan"
 	PhaseSession  Phase = "session"
 	PhaseVerify   Phase = "verify"
 	PhasePR       Phase = "pr"
@@ -272,6 +273,9 @@ func (r *Run) Dir() string { return r.dir }
 
 // SummaryFile is where the agent writes the PR summary.
 func (r *Run) SummaryFile() string { return filepath.Join(r.dir, "summary.md") }
+
+// PlanFile is where a plan session writes its plan.
+func (r *Run) PlanFile() string { return filepath.Join(r.dir, "plan.md") }
 
 // LogFile is the run-level log.
 func (r *Run) LogFile() string { return filepath.Join(r.dir, "run.log") }

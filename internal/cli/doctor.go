@@ -100,7 +100,7 @@ func (d *doctor) run() {
 }
 
 func (d *doctor) checkFiles(cfg *config.Config) {
-	tpls := map[string]string{"session": cfg.Prompts.Session, "review": cfg.Prompts.Review, "ci": cfg.Prompts.CI, "conflict": cfg.Prompts.Conflict, "verify": cfg.Prompts.Verify}
+	tpls := map[string]string{"session": cfg.Prompts.Session, "plan": cfg.Prompts.Plan, "review": cfg.Prompts.Review, "ci": cfg.Prompts.CI, "conflict": cfg.Prompts.Conflict, "verify": cfg.Prompts.Verify}
 	for name, p := range tpls {
 		if p == "" {
 			continue

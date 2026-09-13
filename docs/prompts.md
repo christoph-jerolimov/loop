@@ -19,6 +19,8 @@ prints the rendered session prompt for an item.
 | `.Reviews` | `.Author`, `.State`, `.Body`, `.URL` | review |
 | `.ReviewComments` | `.ID`, `.Author`, `.Path`, `.Line`, `.Body`, `.DiffHunk`, `.URL` | review |
 | `.RepliesFile` | path of the JSON file where the session records, per comment id, its reply and whether the request is done | review |
+| `.PlanFile` | path the plan session writes its plan to | plan |
+| `.Plan` | the approved plan's text, empty without `workflow.plan` | session |
 | `.PRComments` | `.Author`, `.Body`, `.Created`, `.URL` | review |
 | `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text`, `.Log` (tail of the Actions job log, see `workflow.ci_log_lines`) | ci |
 | `.Conflicts` | list of file paths | conflict |

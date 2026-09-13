@@ -3,9 +3,13 @@
 ## Phases
 
 ```
-queued → checkout → setup → session → verify → [gate before-pr] → pr
+queued → checkout → setup → [plan] → [gate before-code] → session → verify → [gate before-pr] → pr
       → monitor ⇄ [gate before-fix] fix → [gate before-merge] merge → close → cleanup → done
 ```
+
+`plan` is optional (`workflow.plan: true`): a session explores the
+repository without changing it and writes a short plan with an estimate,
+which loop posts on the ticket. See [plan before code](#plan-before-code).
 
 `monitor` polls the PR every `workflow.poll_interval` and decides in this
 order:
@@ -62,6 +66,24 @@ waits until the source reports the item closed. `cleanup` runs
 `steps.cleanup`, then removes the worktree, the local branch and, after a
 merge, the remote branch.
 
+## Plan before code
+
+Steering a plan costs a person a minute; steering a finished PR costs an
+hour. With `workflow.plan: true` every run starts with a planning session
+driven by the `plan` template: the agent reads the ticket and the
+repository, changes nothing, and writes goal, approach, files to touch,
+tests, risks and an S/M/L estimate into `plan.md` in the run folder. loop
+posts the plan as a comment on the ticket and hands it to the
+implementation session as `.Plan`, so the session follows what was
+approved.
+
+Add `before-code` to `workflow.gates` to make the run wait for a human
+after the plan. `loop approve <run>` continues it; for GitHub issues of
+the repository a `/loop approve` comment on the issue by a collaborator
+with push access does the same. Anything the plan session leaves in the
+worktree is discarded before the implementation starts. The gate works
+without the plan too: it then simply holds the run before the session.
+
 ## API errors and rate limits
 
 Every GitHub and Jira call retries network errors, 5xx responses and
@@ -77,6 +99,10 @@ long outage neither hammers the API nor stops the run.
 
 `workflow.gates` lists points where the run parks until a human confirms:
 
+- `before-code`: after setup and the optional plan, before the
+  implementation session. There is no PR yet, so the note goes on the
+  ticket; for a GitHub issue of the repository, `/loop approve` works as a
+  comment on the issue.
 - `before-pr`: after verify, before pushing and opening the PR.
 - `before-fix`: before every fix round.
 - `before-merge`: before loop merges (only meaningful for the merge

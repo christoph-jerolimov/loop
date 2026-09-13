@@ -25,6 +25,8 @@ type fakeGitHub struct {
 	mu     sync.Mutex
 	pr     map[string]any
 	prHead string
+	// issueComments are the comments on issue 12, the GitHub-sourced item.
+	issueComments []map[string]any
 	// remote and fork are the bare repositories behind the fake, so the
 	// PR head is the real branch head like on GitHub.
 	remote, fork string
@@ -87,6 +89,21 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 				"head": map[string]any{"ref": in["head"], "sha": "sha1"}, "base": map[string]any{"ref": "main"}}
 			write(f.pr)
 		case p == "/repos/o/r/pulls" && r.Method == http.MethodGet:
+			write([]any{})
+		case p == "/repos/o/r/issues" && r.Method == http.MethodGet:
+			write([]any{fakeIssue()})
+		case p == "/repos/o/r/issues/12" && r.Method == http.MethodGet:
+			write(fakeIssue())
+		case p == "/repos/o/r/issues/12" && r.Method == http.MethodPatch:
+			write(fakeIssue())
+		case p == "/repos/o/r/issues/12/comments" && r.Method == http.MethodGet:
+			write(f.issueComments)
+		case p == "/repos/o/r/issues/12/comments" && r.Method == http.MethodPost:
+			var in map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			f.issueComments = append(f.issueComments, map[string]any{"id": len(f.issueComments) + 200, "body": in["body"], "user": map[string]any{"login": "loop-bot"}, "author_association": "OWNER", "created_at": time.Now()})
+			write(map[string]any{})
+		case strings.HasPrefix(p, "/repos/o/r/issues/12/labels"):
 			write([]any{})
 		case p == "/repos/o/r/pulls/7" && r.Method == http.MethodGet:
 			f.pr["merged"] = f.merged
@@ -171,6 +188,11 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 	})
 }
 
+func fakeIssue() map[string]any {
+	return map[string]any{"number": 12, "node_id": "I_12", "title": "Add search", "body": "Index things.", "state": "open",
+		"html_url": "https://gh/o/r/issues/12", "labels": []any{}, "created_at": "2026-01-02T00:00:00Z", "user": map[string]any{"login": "ann"}}
+}
+
 // headSHA resolves the PR branch head in the bare repository it was pushed
 // to (the fork for "owner:branch" heads).
 func (f *fakeGitHub) headSHA() string {
@@ -206,6 +228,12 @@ const fakeAgent = `#!/bin/sh
 prompt=$(cat)
 sid=""
 while [ $# -gt 0 ]; do case "$1" in --session-id) sid="$2"; shift;; esac; shift; done
+if [ -n "$LOOP_PLAN_FILE" ]; then
+  printf '1. Goal: feature.txt exists.\n2. Estimate: S, one session.\n' > "$LOOP_PLAN_FILE"
+  echo scratch > scratch.txt
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"planned\",\"session_id\":\"$sid\",\"total_cost_usd\":0.5}"
+  exit 0
+fi
 git config user.email a@t; git config user.name a
 echo "$prompt" >> feature.txt
 git add -A && git commit -qm "agent work"

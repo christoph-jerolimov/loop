@@ -18,7 +18,7 @@ func TestDefaultTemplatesRender(t *testing.T) {
 		Checks:         []Check{{Name: "test", Conclusion: "failure", Summary: "boom"}},
 		Conflicts:      []string{"a.go"}, VerifyStep: "go test", VerifyOutput: "FAIL", Summary: "did stuff",
 	}
-	for _, name := range []string{TplSession, TplReview, TplCI, TplConflict, TplVerify, TplPRBody} {
+	for _, name := range []string{TplSession, TplPlan, TplReview, TplCI, TplConflict, TplVerify, TplPRBody} {
 		out, err := RenderFile(name, "", d)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)

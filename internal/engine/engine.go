@@ -200,7 +200,7 @@ func (e *Engine) Step(ctx context.Context, r *state.Run) (wait bool, err error) 
 		}
 	}
 	switch r.Phase {
-	case state.PhaseQueued, state.PhaseCheckout, state.PhaseSetup, state.PhaseSession, state.PhaseVerify, state.PhasePR, state.PhaseFix:
+	case state.PhaseQueued, state.PhaseCheckout, state.PhaseSetup, state.PhasePlan, state.PhaseSession, state.PhaseVerify, state.PhasePR, state.PhaseFix:
 		return e.heavyStep(ctx, r)
 	case state.PhaseMonitor:
 		return e.monitor(ctx, r)
@@ -227,6 +227,8 @@ func (e *Engine) heavyStep(ctx context.Context, r *state.Run) (bool, error) {
 		err = e.checkout(ctx, r)
 	case state.PhaseSetup:
 		err = e.setup(ctx, r)
+	case state.PhasePlan:
+		return e.plan(ctx, r)
 	case state.PhaseSession:
 		err = e.session(ctx, r)
 	case state.PhaseVerify:
@@ -472,8 +474,73 @@ func (e *Engine) setup(ctx context.Context, r *state.Run) error {
 	if err := e.runSteps(ctx, r, e.Cfg.Steps.Setup, "setup"); err != nil {
 		return err
 	}
+	if e.Cfg.Workflow.Plan || e.Cfg.HasGate(config.GateBeforeCode) {
+		r.SetPhase(state.PhasePlan, "")
+		return nil
+	}
 	r.SetPhase(state.PhaseSession, "")
 	return nil
+}
+
+// plan runs the planning session once, posts the plan on the ticket and
+// waits at the before-code gate when configured. Without workflow.plan
+// the phase is just the gate.
+func (e *Engine) plan(ctx context.Context, r *state.Run) (bool, error) {
+	r.SetPhase(state.PhasePlan, "")
+	if e.Cfg.Workflow.Plan {
+		if _, err := os.Stat(r.PlanFile()); err != nil {
+			d := e.data(r)
+			text, err := prompt.RenderFile(prompt.TplPlan, e.Cfg.Resolve(e.Cfg.Prompts.Plan), d)
+			if err != nil {
+				e.abandon(ctx, r, err)
+				return false, err
+			}
+			res, err := e.runAgent(ctx, r, "plan", text, "", 0, map[string]string{"LOOP_PLAN_FILE": r.PlanFile()})
+			if err != nil {
+				e.abandon(ctx, r, fmt.Errorf("plan session: %w", err))
+				return false, err
+			}
+			planText, _ := os.ReadFile(r.PlanFile())
+			if strings.TrimSpace(string(planText)) == "" {
+				planText = []byte(strings.TrimSpace(res.Output))
+				_ = os.WriteFile(r.PlanFile(), planText, 0o644)
+			}
+			if strings.TrimSpace(string(planText)) == "" {
+				e.abandon(ctx, r, errors.New("plan session wrote no plan"))
+				return false, errors.New("plan session wrote no plan")
+			}
+			// The plan session must not leave changes behind; the
+			// implementation starts from the ticket's base.
+			if dirty, _ := gitx.HasUncommitted(ctx, r.Workdir); dirty {
+				_, _ = gitx.Run(ctx, r.Workdir, "checkout", "--", ".")
+				_, _ = gitx.Run(ctx, r.Workdir, "clean", "-fdq")
+			}
+			if src := e.Sources.ByName(r.Item.Source); src != nil {
+				note := fmt.Sprintf("loop plan for run `%s`:\n\n%s", r.ID, strings.TrimSpace(string(planText)))
+				if e.Cfg.HasGate(config.GateBeforeCode) {
+					note += fmt.Sprintf("\n\nThe implementation starts after `loop approve %s`%s.", r.ID, e.approveHint(r))
+				}
+				if err := src.Comment(ctx, r.Item, note); err != nil {
+					e.logf(r, "post plan: %v", err)
+				}
+			}
+			e.logf(r, "plan written to %s and posted on the ticket", r.PlanFile())
+		}
+	}
+	if !e.gate(r, config.GateBeforeCode) {
+		return true, nil
+	}
+	r.SetPhase(state.PhaseSession, "")
+	return false, nil
+}
+
+// approveHint names the ticket-side command when the item is a GitHub
+// issue of the repository, where "/loop approve" works before a PR exists.
+func (e *Engine) approveHint(r *state.Run) string {
+	if e.commandIssue(r) == 0 || r.PR != nil {
+		return ""
+	}
+	return " or a `" + cmdApprove + "` comment here from a collaborator with push access"
 }
 
 // runSteps executes a step list in order and stops at the first failure.
@@ -545,6 +612,10 @@ func (e *Engine) data(r *state.Run) *prompt.Data {
 	}
 	if b, err := os.ReadFile(r.SummaryFile()); err == nil {
 		d.Summary = strings.TrimSpace(string(b))
+	}
+	d.PlanFile = r.PlanFile()
+	if b, err := os.ReadFile(r.PlanFile()); err == nil {
+		d.Plan = strings.TrimSpace(string(b))
 	}
 	return d
 }
