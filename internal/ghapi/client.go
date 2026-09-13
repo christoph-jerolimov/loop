@@ -667,7 +667,29 @@ func (c *Client) JobLogs(ctx context.Context, jobID int64) (string, error) {
 	return c.getText(ctx, c.repoPath("/actions/jobs/%d/logs", jobID))
 }
 
-var jobURLRe = regexp.MustCompile(`/actions/runs/\d+/jobs?/(\d+)`)
+var (
+	jobURLRe         = regexp.MustCompile(`/actions/runs/\d+/jobs?/(\d+)`)
+	workflowRunURLRe = regexp.MustCompile(`/actions/runs/(\d+)`)
+)
+
+// WorkflowRunID extracts the Actions workflow run id from a check run's
+// URL; 0 for checks that are not Actions jobs.
+func (c CheckRun) WorkflowRunID() int64 {
+	for _, u := range []string{c.HTMLURL, c.DetailsURL} {
+		if m := workflowRunURLRe.FindStringSubmatch(u); m != nil {
+			var id int64
+			if _, err := fmt.Sscan(m[1], &id); err == nil {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
+// RerunFailedJobs asks Actions to re-run the failed jobs of a workflow run.
+func (c *Client) RerunFailedJobs(ctx context.Context, runID int64) error {
+	return c.do(ctx, http.MethodPost, c.repoPath("/actions/runs/%d/rerun-failed-jobs", runID), nil, nil)
+}
 
 // JobID extracts the Actions job id from a check run. Only checks created
 // by GitHub Actions have one; for other apps it returns 0.

@@ -31,20 +31,24 @@ type fakeGitHub struct {
 	// PR head is the real branch head like on GitHub.
 	remote, fork string
 	commits      []map[string]any
-	checks       []map[string]any
-	reviews      []map[string]any
-	rcomments    []map[string]any
-	icomments    []map[string]any
-	merged       bool
-	mergeable    bool
-	mstate       string
-	readyCall    int
-	mergeCall    int
-	deleted      []string
-	replies      map[int64]string
-	resolved     []string
-	perms        map[string]string
-	reactions    map[int64]string
+	// reruns counts rerun-failed-jobs calls; flaky turns the failed check
+	// green on the re-run.
+	reruns    int
+	flaky     bool
+	checks    []map[string]any
+	reviews   []map[string]any
+	rcomments []map[string]any
+	icomments []map[string]any
+	merged    bool
+	mergeable bool
+	mstate    string
+	readyCall int
+	mergeCall int
+	deleted   []string
+	replies   map[int64]string
+	resolved  []string
+	perms     map[string]string
+	reactions map[int64]string
 }
 
 func (f *fakeGitHub) handler(t *testing.T) http.Handler {
@@ -145,6 +149,14 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			f.icomments = append(f.icomments, map[string]any{"id": len(f.icomments) + 100, "body": in["body"], "user": map[string]any{"login": "loop-bot"}, "created_at": time.Now()})
 			write(map[string]any{})
+		case strings.HasPrefix(p, "/repos/o/r/actions/runs/") && strings.HasSuffix(p, "/rerun-failed-jobs"):
+			f.reruns++
+			if f.flaky {
+				for _, c := range f.checks {
+					c["conclusion"] = "success"
+				}
+			}
+			w.WriteHeader(201)
 		case p == "/repos/o/r/actions/jobs/1/logs":
 			w.Header().Set("Content-Type", "text/plain")
 			fmt.Fprint(w, "2026-09-12T16:44:04.0000000Z ##[group]Run go test\n2026-09-12T16:44:05.0000000Z --- FAIL: TestThing (0.00s)\n2026-09-12T16:44:06.0000000Z FAIL\tpkg\n")
@@ -394,10 +406,14 @@ func TestFullLifecycle(t *testing.T) {
 		t.Errorf("expected 2 commits on remote branch, got %s", pushes)
 	}
 
-	// Red CI → fix round → push.
+	// Red CI → the failed jobs are re-run once → still red → fix round → push.
 	gh.mu.Lock()
 	gh.checks = []map[string]any{{"id": 1, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "https://gh/o/r/actions/runs/9/job/1", "output": map[string]any{"summary": "boom"}}}
 	gh.mu.Unlock()
+	drive(state.PhaseMonitor)
+	if gh.reruns != 1 || r.FixRounds != 0 || r.CIRerunSHA != r.PR.HeadSHA {
+		t.Fatalf("the first red poll must re-run the jobs, not start a fix round: reruns=%d rounds=%d", gh.reruns, r.FixRounds)
+	}
 	drive(state.PhaseMonitor)
 	if r.FixRounds != 1 || r.LastCIFixSHA == "" {
 		t.Errorf("expected one CI fix round, got %d (%q)", r.FixRounds, r.LastCIFixSHA)

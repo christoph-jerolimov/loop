@@ -109,4 +109,5 @@ workflow:
   self_review: false         # a second session reviews the diff before the PR opens
   gates: []                  # before-code, before-pr, before-fix, before-merge (loop approve <run>)
   on_human_push: pause       # pause: park when a person pushes to the branch | continue
+  ci_rerun: true             # re-run failed Actions jobs once before a CI fix round
   concurrency: 1
