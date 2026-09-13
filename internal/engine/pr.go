@@ -161,7 +161,7 @@ func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState,
 		return st, err
 	}
 	for _, s := range statuses {
-		if len(required) > 0 && !required[s.Context] {
+		if s.Context == statusContext || len(required) > 0 && !required[s.Context] {
 			continue
 		}
 		switch s.State {
