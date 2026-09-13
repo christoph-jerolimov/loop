@@ -74,3 +74,32 @@ steps:
 		}
 	}
 }
+
+func TestCommentsPolicy(t *testing.T) {
+	load := func(t *testing.T, sources string) (*Config, error) {
+		t.Helper()
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, FileName), []byte("repo:\n  url: git@github.com:acme/widgets.git\nsources:\n"+sources), 0o644)
+		return Load(dir)
+	}
+	cfg, err := load(t, "  - type: markdown\n  - type: github\n  - type: jira\n    url: https://j\n    jql: project = A\n    comments: false\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Sources[0].Comments != CommentsAll || cfg.Sources[1].Comments != CommentsWriters || cfg.Sources[2].Comments != CommentsNone {
+		t.Errorf("defaults: markdown %q github %q jira %q", cfg.Sources[0].Comments, cfg.Sources[1].Comments, cfg.Sources[2].Comments)
+	}
+	cfg, err = load(t, "  - type: github\n    comments: true\n  - type: github\n    name: gh2\n    comments: all\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Sources[0].Comments != CommentsAll || cfg.Sources[1].Comments != CommentsAll {
+		t.Errorf("true and all: %q %q", cfg.Sources[0].Comments, cfg.Sources[1].Comments)
+	}
+	if _, err := load(t, "  - type: github\n    comments: sometimes\n"); err == nil || !strings.Contains(err.Error(), "comments must be all, writers or none") {
+		t.Errorf("invalid value: %v", err)
+	}
+	if _, err := load(t, "  - type: markdown\n    comments: writers\n"); err == nil || !strings.Contains(err.Error(), "only supported by github") {
+		t.Errorf("writers on markdown: %v", err)
+	}
+}

@@ -36,7 +36,7 @@ Common keys:
 | `labels` | none | Only items carrying all of these labels are listed. Recommended: `[ready-for-agent]`. |
 | `claim` | `false` (`true` when `claim_label` is set) | Mark items in progress so two loops never pick the same one. |
 | `claim_label` | `loop:in-progress` | Label used by GitHub and Jira for the claim. |
-| `comments` | see description | Load ticket comments into the template data (`.Item.Comments`). Unset means `true` for markdown and Jira; for GitHub, `true` on a private repository and `false` on a public one, where anyone can comment. See [security](security.md#prompt-injection-from-tickets). |
+| `comments` | `writers` for GitHub, `all` otherwise | Whose ticket comments are loaded into the template data (`.Item.Comments`): `all`, `writers` (GitHub only: the repository owner and collaborators with write access, checked per author) or `none`. `true` and `false` still work as `all` and `none`. See [security](security.md#prompt-injection-from-tickets). |
 
 ### `type: markdown`
 

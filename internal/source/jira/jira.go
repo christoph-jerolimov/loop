@@ -69,7 +69,7 @@ func (s *Source) convert(is *jiraapi.Issue) *item.Item {
 			it.DependsOn = append(it.DependsOn, l.InwardIssue.Key)
 		}
 	}
-	if s.cfg.Comments == nil || *s.cfg.Comments {
+	if s.cfg.Comments.Loaded() {
 		for _, cm := range is.Fields.Comment.Comments {
 			if strings.HasPrefix(cm.Body, claimPrefix) {
 				it.ClaimedBy = strings.TrimSpace(strings.TrimPrefix(strings.SplitN(cm.Body, "\n", 2)[0], claimPrefix))
