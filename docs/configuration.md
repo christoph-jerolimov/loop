@@ -209,7 +209,9 @@ Steps see this environment: `LOOP_PROJECT`, `LOOP_PROJECT_DIR`,
 `LOOP_WORKDIR`, `LOOP_BRANCH`, `LOOP_BASE`, `LOOP_ITEM_ID`,
 `LOOP_ITEM_TITLE`, `LOOP_ITEM_URL`, `LOOP_RUN_ID`, `LOOP_RUN_DIR`,
 `LOOP_SUMMARY_FILE`, `LOOP_PR_URL`, `LOOP_PR_NUMBER`, `LOOP_RUN_PHASE`,
-`LOOP_RUN_ERROR` (the reason a run parked), plus `agent.env`.
+`LOOP_RUN_ERROR` (the reason a run parked), plus `agent.env`. Agent
+sessions additionally get `LOOP_PROMPT_FILE`, the file their prompt was
+loaded from (see [prompt files](prompts.md#prompt-files)).
 
 ## `pr`
 

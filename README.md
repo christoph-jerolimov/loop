@@ -77,8 +77,9 @@ git-ignored.
    usual.
 4. **Session.** The session prompt template is rendered with the item (and
    its ticket comments, if the template uses them; on GitHub only comments
-   by the owner and collaborators with write access, by default) and the
-   agent runs headlessly. The agent commits its work and writes a PR summary. Up to
+   by the owner and collaborators with write access, by default), written
+   to a file in the run folder, and the agent loads it from there and runs
+   headlessly. Fix rounds work the same way. The agent commits its work and writes a PR summary. Up to
    `agent.attempts` tries. Join a running or finished session at any time:
    `loop join <run>` prints `cd <workdir> && claude --resume <id>`.
 5. **Verify.** `steps.verify` scripts run; a failing one starts a fix session

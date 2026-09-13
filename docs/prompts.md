@@ -28,6 +28,20 @@ prints the rendered session prompt for an item.
 Functions: `quote` (markdown blockquote), `indent n`, `trunc n`, `join`,
 `trim`, `default`.
 
+## Prompt files
+
+Every prompt is a file before it is anything else. The rendered template
+for the initial session, a CI or review fix round, a conflict round, a
+verify round or an agent step is written to
+`.loop/runs/<run>/session-NN-<kind>.prompt.md` first, and the agent CLI
+loads it from there: Claude receives the file's content on standard
+input, Cursor receives the content on standard input plus a one-line
+instruction naming the file. The session sees the path as
+`LOOP_PROMPT_FILE`, so the agent (or a hook) can read the instructions
+again at any point. `loop logs <run> --prompt` prints the same file, so
+what you inspect is exactly what the agent received. A prompt that cannot
+be written or renders empty stops the session before the CLI starts.
+
 ## Ticket comments: use them or not
 
 Whether the discussion on a ticket reaches the agent is decided by the

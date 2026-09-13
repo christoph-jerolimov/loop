@@ -82,7 +82,7 @@ push, poll result and error.
 | Flag | Meaning |
 | --- | --- |
 | `--session[=N]` | The raw transcript of an agent session instead, by default the latest; `--session=2` selects the second. |
-| `--prompt` | The exact prompt the selected session received. |
+| `--prompt` | The prompt file the selected session was started from, exactly as the agent loaded it. |
 | `-f, --follow` | Keep printing as the file grows; the easiest way to watch a running session. |
 | `-n, --lines N` | Only the last N lines. |
 

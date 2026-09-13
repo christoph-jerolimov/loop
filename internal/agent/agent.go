@@ -7,8 +7,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,9 +19,9 @@ import (
 // Options configures one headless session.
 type Options struct {
 	Workdir string
-	Prompt  string
-	// PromptFile is where the prompt has been written to disk. Runners
-	// whose CLI cannot take a long prompt on stdin point the agent at it.
+	// PromptFile is the file the prompt was written to before the session
+	// starts. Runners load the prompt from there: the file is the single
+	// source of what the agent was told, and the agent can read it again.
 	PromptFile     string
 	Model          string
 	PermissionMode string
@@ -277,8 +279,27 @@ func (Claude) Run(ctx context.Context, o Options) (*Result, error) {
 		args = append(args, "--max-turns", fmt.Sprint(o.MaxTurns))
 	}
 	args = append(args, o.ExtraArgs...)
-	err := runProcess(ctx, o, name, args, o.Prompt, res)
+	prompt, err := loadPrompt(o)
+	if err != nil {
+		return res, err
+	}
+	err = runProcess(ctx, o, name, args, prompt, res)
 	return res, err
+}
+
+// loadPrompt reads the prompt file the engine wrote for the session.
+func loadPrompt(o Options) (string, error) {
+	if o.PromptFile == "" {
+		return "", errors.New("no prompt file for the session")
+	}
+	b, err := os.ReadFile(o.PromptFile)
+	if err != nil {
+		return "", fmt.Errorf("read prompt: %w", err)
+	}
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return "", fmt.Errorf("prompt file %s is empty", o.PromptFile)
+	}
+	return string(b), nil
 }
 
 // JoinCommand resumes the session interactively.
@@ -291,17 +312,12 @@ type Cursor struct{}
 
 func (Cursor) Name() string { return "cursor" }
 
-// cursorArgMax keeps the positional prompt well below the per-argument
-// limit of the operating system (128 KiB on Linux).
-const cursorArgMax = 16 << 10
-
 // Run creates a chat first so its id is known, then drives it headlessly.
 //
-// The prompt is never passed as a command-line argument when it is long:
-// tickets with comment threads exceed the argument size limit. Instead the
-// prompt is piped on stdin and a short positional instruction points the
-// agent at the prompt file, so it is available whichever of the two the
-// CLI picks up.
+// The prompt is never passed as a command-line argument: tickets with
+// comment threads exceed the argument size limit. The prompt file is piped
+// on stdin and a short positional instruction points the agent at the
+// file, so it is available whichever of the two the CLI picks up.
 func (Cursor) Run(ctx context.Context, o Options) (*Result, error) {
 	name := o.Command
 	if name == "" {
@@ -322,13 +338,12 @@ func (Cursor) Run(ctx context.Context, o Options) (*Result, error) {
 		args = append(args, "--model", o.Model)
 	}
 	args = append(args, o.ExtraArgs...)
-	positional, stdin := o.Prompt, ""
-	if o.PromptFile != "" && len(o.Prompt) > cursorArgMax {
-		positional = fmt.Sprintf("Your complete instructions are in the file %s and are also provided on standard input. Read them fully and follow them exactly.", o.PromptFile)
-		stdin = o.Prompt
+	prompt, err := loadPrompt(o)
+	if err != nil {
+		return res, err
 	}
-	args = append(args, positional)
-	err := runProcess(ctx, o, name, args, stdin, res)
+	args = append(args, fmt.Sprintf("Your complete instructions are in the file %s and are also provided on standard input. Read them fully and follow them exactly.", o.PromptFile))
+	err = runProcess(ctx, o, name, args, prompt, res)
 	return res, err
 }
 
