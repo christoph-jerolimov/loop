@@ -65,8 +65,9 @@ git-ignored.
 
 ## How one iteration works
 
-1. **Pick.** `loop list` orders open items by the position of their source
-   in `loop.yaml`, then oldest first. Items with open dependencies, an
+1. **Pick.** `loop list` orders open items by priority (a frontmatter key, a
+   `priority: high` or `P1` label, or Jira's priority field), then by the
+   position of their source in `loop.yaml`, then oldest first. Items with open dependencies, an
    in-progress marker or a running loop are shown but skipped.
 2. **Checkout.** A worktree (or clone) is created in `.loop/workdirs/` on a
    branch `loop/<id>-<title>`; an existing name gets a `-2`, `-3` suffix.

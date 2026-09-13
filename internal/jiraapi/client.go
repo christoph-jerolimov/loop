@@ -108,7 +108,10 @@ type Issue struct {
 		Description string   `json:"description"`
 		Labels      []string `json:"labels"`
 		Created     string   `json:"created"`
-		Status      struct {
+		Priority    struct {
+			Name string `json:"name"`
+		} `json:"priority"`
+		Status struct {
 			Name           string `json:"name"`
 			StatusCategory struct {
 				Key string `json:"key"` // new, indeterminate, done
@@ -153,7 +156,7 @@ func ParseTime(s string) time.Time {
 	return time.Time{}
 }
 
-const fields = "summary,description,labels,created,status,issuelinks,comment"
+const fields = "summary,description,labels,created,status,priority,issuelinks,comment"
 
 // Search runs a JQL query and returns every matching issue.
 func (c *Client) Search(ctx context.Context, jql string) ([]Issue, error) {

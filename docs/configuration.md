@@ -38,6 +38,24 @@ Common keys:
 | `claim_label` | `loop:in-progress` | Label used by GitHub and Jira for the claim. |
 | `comments` | `writers` for GitHub, `all` otherwise | Whose ticket comments are loaded into the template data (`.Item.Comments`): `all`, `writers` (GitHub only: the repository owner and collaborators with write access, checked per author) or `none`. See [security](security.md#prompt-injection-from-tickets). |
 
+### Priority
+
+Items with a priority are picked before items without, highest first,
+and only then does source order and age decide. The spellings are the
+same everywhere: the numbers `1` (highest) to `9`, `P0` to `P9`, or the
+words `highest`, `critical`, `blocker`, `urgent`, `high`, `medium`,
+`normal`, `major`, `low`, `minor`, `lowest`, `trivial`. Where it comes
+from:
+
+- markdown: a `priority:` frontmatter key.
+- GitHub: a label such as `priority: high`, `priority/high`, `prio-2` or
+  `P1`; the highest one wins when several match.
+- Jira: the issue's priority field.
+- any source: a body line `priority: high`, like `depends on:` and
+  `model:`.
+
+`loop list` shows the priority in its own column.
+
 ### `type: markdown`
 
 | Key | Default | Description |

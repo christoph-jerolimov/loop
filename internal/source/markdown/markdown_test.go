@@ -20,7 +20,7 @@ func write(t *testing.T, dir, name, content string) {
 
 func TestListClaimClose(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "auth.md", "---\ntitle: Add auth\ncreated: 2026-01-02\nlabels: [ready]\n---\nBuild login.\n")
+	write(t, dir, "auth.md", "---\ntitle: Add auth\ncreated: 2026-01-02\nlabels: [ready]\npriority: high\n---\nBuild login.\n")
 	write(t, dir, "search.md", "# Search\n\nDepends on: auth.md\nmodel: claude-opus-5\n")
 	write(t, dir, "done.md", "---\nstatus: closed\n---\nold\n")
 
@@ -32,8 +32,8 @@ func TestListClaimClose(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("got %d items, want 2", len(items))
 	}
-	if items[0].NativeID != "auth" {
-		t.Errorf("first item = %s, want auth (older)", items[0].NativeID)
+	if items[0].NativeID != "auth" || items[0].Priority != 2 {
+		t.Errorf("first item = %s (priority %d), want auth with priority high", items[0].NativeID, items[0].Priority)
 	}
 	search := items[1]
 	if search.Title != "Search" || search.Model != "claude-opus-5" || len(search.DependsOn) != 1 || search.DependsOn[0] != "auth.md" {

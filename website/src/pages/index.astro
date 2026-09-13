@@ -87,7 +87,7 @@ loop watch --pick         # long-running worker`;
     <h2>One iteration, start to finish</h2>
     <p class="sub">Every phase is persisted, so a crashed worker picks up where it stopped. Nothing is hidden: prompts, steps and scripts all live in your loop project and are referenced from <code>loop.yaml</code>.</p>
     <div class="steps">
-      <div class="step"><h3>Pick</h3><p>Items are ordered by source, then oldest first. <code>depends on:</code> lines, frontmatter and Jira links block items until their dependencies are closed.</p></div>
+      <div class="step"><h3>Pick</h3><p>Items are ordered by priority (frontmatter, a <code>P1</code> label or Jira's field), then by source, then oldest first. <code>depends on:</code> lines, frontmatter and Jira links block items until their dependencies are closed.</p></div>
       <div class="step"><h3>Checkout</h3><p>A git worktree on <code>loop/&lt;id&gt;-&lt;title&gt;</code>. The item is claimed with a label, a comment or a frontmatter flag so no second loop grabs it.</p></div>
       <div class="step"><h3>Plan, then session</h3><p>Optionally a planning session first writes a short plan with an estimate onto the ticket, and a <code>before-code</code> gate lets a person approve it. Then your session template is rendered with the ticket (and its comments, if you want them) and the agent runs headlessly. Join any session with <code>loop join</code>.</p></div>
       <div class="step"><h3>Verify</h3><p>Scripts or agent steps run in the workdir after the session and after every fix round. A failing check feeds its output back into a fix session before anything is pushed. Optionally a second session reviews the diff and its findings get one fix round before the PR exists.</p></div>

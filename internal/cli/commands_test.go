@@ -353,3 +353,23 @@ func TestStatsCommand(t *testing.T) {
 		t.Errorf("json: %v\n%s", err, out)
 	}
 }
+
+func TestListOrdersByPriorityFirst(t *testing.T) {
+	p := newProject(t)
+	os.WriteFile(filepath.Join(p.dir, "backlog", "urgent.md"), []byte("---\ntitle: Hotfix\ncreated: 2026-03-01\npriority: P0\n---\nNow.\n"), 0o644)
+	out, err := execute(t, p, "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.Contains(lines[0], "PRIORITY") || !strings.Contains(lines[1], "backlog:urgent") || !strings.Contains(lines[1], "highest") {
+		t.Errorf("the newest item with the highest priority must come first:\n%s", out)
+	}
+	if !strings.Contains(lines[2], "backlog:auth") {
+		t.Errorf("then source order and age:\n%s", out)
+	}
+	out, _ = execute(t, p, "show", "urgent.md")
+	if !strings.Contains(out, "priority:   highest") {
+		t.Errorf("show lacks the priority:\n%s", out)
+	}
+}

@@ -65,6 +65,9 @@ func (s *Source) convert(ctx context.Context, is *ghapi.Issue, withComments bool
 	}
 	for _, l := range is.Labels {
 		it.Labels = append(it.Labels, l.Name)
+		if p := item.PriorityFromLabel(l.Name); p != 0 && (it.Priority == 0 || p < it.Priority) {
+			it.Priority = p
+		}
 	}
 	if s.cfg.ClaimLabel != "" && it.HasLabel(s.cfg.ClaimLabel) {
 		it.InProgress = true
