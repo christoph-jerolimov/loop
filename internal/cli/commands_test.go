@@ -373,3 +373,49 @@ func TestListOrdersByPriorityFirst(t *testing.T) {
 		t.Errorf("show lacks the priority:\n%s", out)
 	}
 }
+
+func TestRunDryRunPrintsPlanWithoutStarting(t *testing.T) {
+	p := newProject(t)
+	p.writeYAML(t, p.yaml+"workflow:\n  plan: true\n  gates: [before-pr]\nsteps:\n  verify:\n    - run: go test ./...\n")
+	out, err := execute(t, p, "run", "--dry-run", "search.md")
+	if err != nil {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"dry run for backlog:search  Add search",
+		"would start:   only with --force, it depends on open items: auth.md",
+		"branch:        loop/search-add-search",
+		"workdir:       ",
+		"harness:       claude (claude)",
+		"phases:        checkout → setup → plan → session → verify → [gate before-pr] → pr → monitor → merge → close → cleanup",
+		"steps.verify:  run: go test ./...",
+		"gates before-pr",
+		"pr title:      ",
+		"--- plan prompt (",
+		"--- session prompt (",
+		"Index things.",
+		"--- nothing was started, claimed or written ---",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	st, err := execute(t, p, "status", "-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(st, "search") {
+		t.Errorf("dry run must not create a run:\n%s", st)
+	}
+	raw, _ := os.ReadFile(filepath.Join(p.dir, "backlog", "search.md"))
+	if strings.Contains(string(raw), "in-progress") {
+		t.Errorf("dry run must not claim the item:\n%s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(p.dir, ".loop", "workdirs")); !os.IsNotExist(err) {
+		t.Error("dry run must not create a workdir")
+	}
+	out, err = execute(t, p, "run", "--dry-run", "auth.md")
+	if err != nil || !strings.Contains(out, "would start:   yes") {
+		t.Errorf("ready item: %v\n%s", err, out)
+	}
+}
