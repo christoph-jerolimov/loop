@@ -126,17 +126,16 @@ const (
 	CommentsNone CommentsPolicy = "none"
 )
 
-// UnmarshalYAML accepts the policy names and, for compatibility, the
-// booleans true (all) and false (none).
+// UnmarshalYAML accepts exactly the policy names.
 func (p *CommentsPolicy) UnmarshalYAML(n *yaml.Node) error {
-	switch strings.ToLower(strings.TrimSpace(n.Value)) {
+	switch strings.TrimSpace(n.Value) {
 	case "", "~", "null":
 		*p = ""
-	case "all", "true", "yes", "on":
+	case "all":
 		*p = CommentsAll
-	case "writers", "write":
+	case "writers":
 		*p = CommentsWriters
-	case "none", "false", "no", "off":
+	case "none":
 		*p = CommentsNone
 	default:
 		return fmt.Errorf("comments must be all, writers or none, got %q", n.Value)
