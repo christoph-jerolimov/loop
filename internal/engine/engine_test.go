@@ -212,7 +212,7 @@ git add -A && git commit -qm "agent work"
 printf '## Summary\nAgent did things.\n' >> "$LOOP_SUMMARY_FILE"
 echo "$LOOP_PROMPT_FILE" >> "$LOOP_RUN_DIR/prompt-files"
 if [ -n "$LOOP_REPLIES_FILE" ]; then printf '[{"id": 2, "reply": "Renamed as asked.", "resolved": true}]' > "$LOOP_REPLIES_FILE"; fi
-echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"session_id\":\"$sid\"}"
+echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"session_id\":\"$sid\",\"total_cost_usd\":1.25,\"num_turns\":4}"
 `
 
 // lifecycle wires a fake remote, a fake agent CLI, a fake GitHub API and

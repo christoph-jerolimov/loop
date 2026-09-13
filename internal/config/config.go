@@ -32,6 +32,7 @@ type Config struct {
 	Steps    Steps          `yaml:"steps"`
 	PR       PR             `yaml:"pr"`
 	Workflow Workflow       `yaml:"workflow"`
+	Budget   Budget         `yaml:"budget"`
 
 	// Dir is the directory that contains loop.yaml. Not part of the file.
 	Dir string `yaml:"-"`
@@ -301,6 +302,20 @@ type Workflow struct {
 	// the run branch: pause (park the run with a note, the default) or
 	// continue (fast-forward the worktree and keep driving on top).
 	OnHumanPush string `yaml:"on_human_push"`
+}
+
+// Budget caps what a run and a project may spend. Zero means unlimited.
+// Costs come from harnesses that report them (Claude Code does); time
+// budgets count agent session wall clock and work with every harness.
+type Budget struct {
+	// RunCost is the most one run may spend in USD across all its sessions.
+	RunCost float64 `yaml:"run_cost"`
+	// RunTime is the most agent session time one run may use.
+	RunTime Duration `yaml:"run_time"`
+	// DailyCost is the most the project may spend per calendar day.
+	DailyCost float64 `yaml:"daily_cost"`
+	// DailyRuns is the most runs the project may start per calendar day.
+	DailyRuns int `yaml:"daily_runs"`
 }
 
 // Reactions to a human pushing to the run branch.
@@ -605,6 +620,9 @@ func (c *Config) Validate() error {
 	case "squash", "merge", "rebase":
 	default:
 		errs = append(errs, fmt.Errorf("workflow.merge_method must be squash, merge or rebase; got %q", c.Workflow.MergeMethod))
+	}
+	if c.Budget.RunCost < 0 || c.Budget.DailyCost < 0 || c.Budget.DailyRuns < 0 || c.Budget.RunTime < 0 {
+		errs = append(errs, errors.New("budget values must not be negative"))
 	}
 	switch c.Workflow.OnHumanPush {
 	case HumanPushPause, HumanPushContinue:

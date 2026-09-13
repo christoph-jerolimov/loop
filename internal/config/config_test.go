@@ -136,3 +136,16 @@ func TestAgentRunnerValidation(t *testing.T) {
 		t.Errorf("claude permission_mode: %v", err)
 	}
 }
+
+func TestBudgetValidation(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, FileName), []byte("repo:\n  url: git@github.com:acme/widgets.git\nsources:\n  - type: markdown\nbudget:\n  run_cost: 5\n  run_time: 90m\n  daily_runs: -1\n"), 0o644)
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "budget values must not be negative") {
+		t.Errorf("negative budget: %v", err)
+	}
+	os.WriteFile(filepath.Join(dir, FileName), []byte("repo:\n  url: git@github.com:acme/widgets.git\nsources:\n  - type: markdown\nbudget:\n  run_cost: 5\n  run_time: 90m\n"), 0o644)
+	cfg, err := Load(dir)
+	if err != nil || cfg.Budget.RunCost != 5 || cfg.Budget.RunTime.D() != 90*time.Minute || cfg.Budget.DailyCost != 0 {
+		t.Errorf("budget = %+v, %v", cfg.Budget, err)
+	}
+}

@@ -89,6 +89,12 @@ pr:
   labels: []
   link_issue: true           # "Closes #n" for GitHub issues
 
+# budget:                    # zero or absent means no cap
+#   run_cost: 5              # USD per run (harnesses that report cost)
+#   run_time: 2h             # agent session time per run
+#   daily_cost: 40
+#   daily_runs: 10
+
 workflow:
   poll_interval: 60s
   fix_rounds: 3              # review/CI fix sessions per run
