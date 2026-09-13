@@ -36,6 +36,7 @@ sources:
 # default; run "loop init" to get editable copies in prompts/.
 prompts:
   session: prompts/session.md
+  plan: prompts/plan.md
   review: prompts/review.md
   ci: prompts/ci.md
   conflict: prompts/conflict.md
@@ -103,6 +104,7 @@ workflow:
   merge_method: squash
   delete_branch: true
   close_issue_on_merge: true # item is done only when the ticket is closed
-  gates: []                  # before-pr, before-fix, before-merge (loop approve <run>)
+  plan: false                # planning session first; the plan is posted on the ticket
+  gates: []                  # before-code, before-pr, before-fix, before-merge (loop approve <run>)
   on_human_push: pause       # pause: park when a person pushes to the branch | continue
   concurrency: 1

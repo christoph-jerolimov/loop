@@ -3,9 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/state"
 )
@@ -16,12 +18,28 @@ const (
 	cmdResume  = "/loop resume"
 )
 
+// commandIssue is the GitHub issue or PR whose comments carry commands
+// for the run: the PR once it exists, before that the ticket itself when
+// it is an issue of the repository. 0 means there is nothing to read.
+func (e *Engine) commandIssue(r *state.Run) int {
+	if r.PR != nil {
+		return r.PR.Number
+	}
+	if r.Item != nil && r.Item.SourceType == "github" && strings.EqualFold(r.Item.Extra["repo"], e.Cfg.Repo.GitHub) {
+		if n, err := strconv.Atoi(r.Item.NativeID); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 // checkPRCommands looks for "/loop approve" and "/loop resume" comments on
-// the run's PR that were written after the run parked, by a collaborator
-// with push access. It reacts to each command once and reports whether
-// the run may continue. Runs without a PR have nothing to look at.
+// the run's PR (or, before a PR exists, on its GitHub issue) that were
+// written after the run parked, by a collaborator with push access. It
+// reacts to each command once and reports whether the run may continue.
 func (e *Engine) checkPRCommands(ctx context.Context, r *state.Run) (proceed bool) {
-	if r.PR == nil || e.Cfg.Workflow.PRCommands == nil || !*e.Cfg.Workflow.PRCommands {
+	n := e.commandIssue(r)
+	if n == 0 || e.Cfg.Workflow.PRCommands == nil || !*e.Cfg.Workflow.PRCommands {
 		return false
 	}
 	if time.Now().Before(r.NextPoll) {
@@ -32,7 +50,7 @@ func (e *Engine) checkPRCommands(ctx context.Context, r *state.Run) (proceed boo
 	if err != nil {
 		return false
 	}
-	comments, err := gh.ListIssueComments(ctx, r.PR.Number)
+	comments, err := gh.ListIssueComments(ctx, n)
 	if err != nil {
 		e.pollFailed(r, err)
 		return false
@@ -80,17 +98,29 @@ func (e *Engine) checkPRCommands(ctx context.Context, r *state.Run) (proceed boo
 	return proceed
 }
 
-// gateNote tells reviewers on the PR how to release a gate.
+// gateNote tells people on the PR, or on the ticket before a PR exists,
+// how to release a gate.
 func (e *Engine) gateNote(ctx context.Context, r *state.Run, gate string) {
-	if r.PR == nil {
+	if r.PR != nil {
+		gh, err := e.GitHub()
+		if err != nil {
+			return
+		}
+		body := fmt.Sprintf("loop is waiting at gate `%s`. A collaborator with push access can continue it by commenting `%s`, or run `loop approve %s` where loop runs.\n\n%s", gate, cmdApprove, r.ID, loopMarker)
+		if err := gh.CreateComment(ctx, r.PR.Number, body); err != nil {
+			e.logf(r, "gate note: %v", err)
+		}
 		return
 	}
-	gh, err := e.GitHub()
-	if err != nil {
+	if gate == config.GateBeforeCode && e.Cfg.Workflow.Plan {
+		return // the plan comment already says how to continue
+	}
+	src := e.Sources.ByName(r.Item.Source)
+	if src == nil {
 		return
 	}
-	body := fmt.Sprintf("loop is waiting at gate `%s`. A collaborator with push access can continue it by commenting `%s`, or run `loop approve %s` where loop runs.\n\n%s", gate, cmdApprove, r.ID, loopMarker)
-	if err := gh.CreateComment(ctx, r.PR.Number, body); err != nil {
+	body := fmt.Sprintf("loop is waiting at gate `%s` for run `%s`. Continue it with `loop approve %s` where loop runs%s.", gate, r.ID, r.ID, e.approveHint(r))
+	if err := src.Comment(ctx, r.Item, body); err != nil {
 		e.logf(r, "gate note: %v", err)
 	}
 }

@@ -158,6 +158,7 @@ func (a Agent) Spec() agent.Spec {
 // fall back to the embedded defaults.
 type Prompts struct {
 	Session  string `yaml:"session"`
+	Plan     string `yaml:"plan"`
 	Review   string `yaml:"review"`
 	CI       string `yaml:"ci"`
 	Conflict string `yaml:"conflict"`
@@ -298,6 +299,11 @@ type Workflow struct {
 	// pull request: "/loop approve" releases a gate, "/loop resume" restarts
 	// a blocked run.
 	PRCommands *bool `yaml:"pr_commands"`
+	// Plan runs a planning session before the implementation: the agent
+	// explores the repository, writes a short plan with an estimate, and
+	// loop posts it on the ticket. With the before-code gate, the run then
+	// waits for a human to approve the plan.
+	Plan bool `yaml:"plan"`
 	// OnHumanPush says what happens when someone other than loop pushes to
 	// the run branch: pause (park the run with a note, the default) or
 	// continue (fast-forward the worktree and keep driving on top).
@@ -373,6 +379,7 @@ const (
 
 // Gate names.
 const (
+	GateBeforeCode  = "before-code"
 	GateBeforePR    = "before-pr"
 	GateBeforeFix   = "before-fix"
 	GateBeforeMerge = "before-merge"
@@ -631,7 +638,7 @@ func (c *Config) Validate() error {
 	}
 	for _, g := range c.Workflow.Gates {
 		switch g {
-		case GateBeforePR, GateBeforeFix, GateBeforeMerge:
+		case GateBeforeCode, GateBeforePR, GateBeforeFix, GateBeforeMerge:
 		default:
 			errs = append(errs, fmt.Errorf("unknown gate %q", g))
 		}

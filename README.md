@@ -81,18 +81,22 @@ git-ignored.
    `LOOP_RUNNER` for one invocation; a `custom` runner is any command that
    reads the prompt file and commits its work
    (see [harnesses](docs/configuration.md#harnesses)).
-4. **Session.** The session prompt template is rendered with the item (and
+4. **Plan (optional).** With `workflow.plan: true` a session first writes a
+   short plan with an estimate, changes nothing, and loop posts it on the
+   ticket. A `before-code` gate lets a person approve the plan before any
+   code is written, from the terminal or with `/loop approve` on the issue.
+5. **Session.** The session prompt template is rendered with the item (and
    its ticket comments, if the template uses them; on GitHub only comments
    by the owner and collaborators with write access, by default), written
    to a file in the run folder, and the agent loads it from there and runs
    headlessly. Fix rounds work the same way. The agent commits its work and writes a PR summary. Up to
    `agent.attempts` tries. Join a running or finished session at any time:
    `loop join <run>` prints `cd <workdir> && claude --resume <id>`.
-5. **Verify.** `steps.verify` scripts run; a failing one starts a fix session
+6. **Verify.** `steps.verify` scripts run; a failing one starts a fix session
    with the output, then verification restarts.
-6. **PR.** The branch is pushed and a (draft) PR is opened from a template,
+7. **PR.** The branch is pushed and a (draft) PR is opened from a template,
    linked to the ticket (`Closes #n` for GitHub issues).
-7. **Monitor.** The PR is polled. A merge conflict is merged with git or, if
+8. **Monitor.** The PR is polled. A merge conflict is merged with git or, if
    that fails, by an agent session. New review comments or a red CI start a
    fix session driven by the review or CI prompt template, with the failing
    job's log included. The verify steps run again before the result is
@@ -100,12 +104,12 @@ git-ignored.
    threads the agent reports as done are resolved. Once CI is green a draft PR is marked ready for review.
    If a person pushes to the branch, loop stops driving the PR and leaves
    it to them (`workflow.on_human_push`).
-8. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
+9. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
    `when-green-and-approved`, or leave it to GitHub (`github-auto-merge`).
    Optional gates (`before-pr`, `before-fix`, `before-merge`) pause the run
    until `loop approve <run>`, or until a collaborator comments
    `/loop approve` on the PR.
-9. **Close.** The item is done when the ticket is closed. loop closes it
+10. **Close.** The item is done when the ticket is closed. loop closes it
    after the merge (or GitHub does through the closing keyword), then removes
    the worktree and the remote branch.
 

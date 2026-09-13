@@ -19,6 +19,7 @@ var Templates embed.FS
 // loop.yaml prompts:.
 const (
 	TplSession  = "session"
+	TplPlan     = "plan"
 	TplReview   = "review"
 	TplCI       = "ci"
 	TplConflict = "conflict"
@@ -88,6 +89,10 @@ type Data struct {
 	// RepliesFile is where a review fix session records, per inline comment
 	// id, what it did, so loop can answer each thread and resolve it.
 	RepliesFile string
+	// PlanFile is where a plan session writes its plan; Plan is that
+	// plan's text once it exists, for the session template.
+	PlanFile string
+	Plan     string
 }
 
 var funcs = template.FuncMap{
