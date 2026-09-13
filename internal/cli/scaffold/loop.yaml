@@ -98,4 +98,5 @@ workflow:
   delete_branch: true
   close_issue_on_merge: true # item is done only when the ticket is closed
   gates: []                  # before-pr, before-fix, before-merge (loop approve <run>)
+  on_human_push: pause       # pause: park when a person pushes to the branch | continue
   concurrency: 1

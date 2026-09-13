@@ -166,6 +166,16 @@ func Push(ctx context.Context, dir, remote, branch string) error {
 	return err
 }
 
+// FastForward fetches the branch from the remote and fast-forwards the
+// worktree to it. A diverged worktree is an error and nothing changes.
+func FastForward(ctx context.Context, dir, remote, branch string) error {
+	if _, err := Run(ctx, dir, "fetch", remote, branch); err != nil {
+		return err
+	}
+	_, err := Run(ctx, dir, "merge", "--ff-only", "FETCH_HEAD")
+	return err
+}
+
 // HeadSHA returns the current commit.
 func HeadSHA(ctx context.Context, dir string) (string, error) {
 	return Run(ctx, dir, "rev-parse", "HEAD")

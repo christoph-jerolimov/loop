@@ -98,6 +98,8 @@ git-ignored.
    job's log included. The verify steps run again before the result is
    pushed, and every inline review thread gets a reply with what was done;
    threads the agent reports as done are resolved. Once CI is green a draft PR is marked ready for review.
+   If a person pushes to the branch, loop stops driving the PR and leaves
+   it to them (`workflow.on_human_push`).
 8. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
    `when-green-and-approved`, or leave it to GitHub (`github-auto-merge`).
    Optional gates (`before-pr`, `before-fix`, `before-merge`) pause the run

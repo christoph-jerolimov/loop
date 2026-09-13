@@ -310,6 +310,32 @@ func (c *Client) FindPullRequestByHead(ctx context.Context, head string) (*PullR
 	return &prs[0], nil
 }
 
+// Commit is one commit of a pull request with the GitHub accounts behind it.
+type Commit struct {
+	SHA       string `json:"sha"`
+	Author    *User  `json:"author"`
+	Committer *User  `json:"committer"`
+	Commit    struct {
+		Author struct {
+			Name string `json:"name"`
+		} `json:"author"`
+	} `json:"commit"`
+}
+
+// ListPullRequestCommits returns the commits of a PR, oldest first.
+func (c *Client) ListPullRequestCommits(ctx context.Context, n int) ([]Commit, error) {
+	var out []Commit
+	err := c.paged(ctx, c.repoPath("/pulls/%d/commits", n), nil, func(raw json.RawMessage) error {
+		var cm Commit
+		if err := json.Unmarshal(raw, &cm); err != nil {
+			return err
+		}
+		out = append(out, cm)
+		return nil
+	})
+	return out, err
+}
+
 // GetPullRequest fetches a PR.
 func (c *Client) GetPullRequest(ctx context.Context, n int) (*PullRequest, error) {
 	var pr PullRequest

@@ -22,23 +22,27 @@ import (
 
 // fakeGitHub is just enough of the REST API for one PR lifecycle.
 type fakeGitHub struct {
-	mu        sync.Mutex
-	pr        map[string]any
-	prHead    string
-	checks    []map[string]any
-	reviews   []map[string]any
-	rcomments []map[string]any
-	icomments []map[string]any
-	merged    bool
-	mergeable bool
-	mstate    string
-	readyCall int
-	mergeCall int
-	deleted   []string
-	replies   map[int64]string
-	resolved  []string
-	perms     map[string]string
-	reactions map[int64]string
+	mu     sync.Mutex
+	pr     map[string]any
+	prHead string
+	// remote and fork are the bare repositories behind the fake, so the
+	// PR head is the real branch head like on GitHub.
+	remote, fork string
+	commits      []map[string]any
+	checks       []map[string]any
+	reviews      []map[string]any
+	rcomments    []map[string]any
+	icomments    []map[string]any
+	merged       bool
+	mergeable    bool
+	mstate       string
+	readyCall    int
+	mergeCall    int
+	deleted      []string
+	replies      map[int64]string
+	resolved     []string
+	perms        map[string]string
+	reactions    map[int64]string
 }
 
 func (f *fakeGitHub) handler(t *testing.T) http.Handler {
@@ -87,6 +91,9 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 		case p == "/repos/o/r/pulls/7" && r.Method == http.MethodGet:
 			f.pr["merged"] = f.merged
 			f.pr["mergeable"] = f.mergeable
+			if sha := f.headSHA(); sha != "" {
+				f.pr["head"] = map[string]any{"ref": f.prHead, "sha": sha}
+			}
 			if f.mstate != "" {
 				f.pr["mergeable_state"] = f.mstate
 			}
@@ -94,6 +101,12 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 				f.pr["state"] = "closed"
 			}
 			write(f.pr)
+		case p == "/repos/o/r/pulls/7/commits":
+			if f.commits == nil {
+				write([]any{})
+			} else {
+				write(f.commits)
+			}
 		case p == "/repos/o/r/pulls/7/reviews":
 			write(f.reviews)
 		case p == "/repos/o/r/pulls/7/comments":
@@ -156,6 +169,26 @@ func (f *fakeGitHub) handler(t *testing.T) http.Handler {
 			w.WriteHeader(404)
 		}
 	})
+}
+
+// headSHA resolves the PR branch head in the bare repository it was pushed
+// to (the fork for "owner:branch" heads).
+func (f *fakeGitHub) headSHA() string {
+	repo, branch := f.remote, f.prHead
+	if owner, b, ok := strings.Cut(branch, ":"); ok {
+		branch = b
+		if owner != "o" {
+			repo = f.fork
+		}
+	}
+	if repo == "" || branch == "" {
+		return ""
+	}
+	out, err := exec.Command("git", "--git-dir", repo, "rev-parse", "refs/heads/"+branch).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func run(t *testing.T, dir string, args ...string) string {
@@ -230,7 +263,7 @@ func newLifecycleWith(t *testing.T, tweak func(cfg *config.Config, lc *lifecycle
 	os.WriteFile(filepath.Join(bin, "claude"), []byte(fakeAgent), 0o755)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	gh := &fakeGitHub{mergeable: true}
+	gh := &fakeGitHub{mergeable: true, remote: remote, fork: fork}
 	lc.gh = gh
 	srv := httptest.NewServer(gh.handler(t))
 	t.Cleanup(srv.Close)
@@ -346,14 +379,18 @@ func TestFullLifecycle(t *testing.T) {
 	if !strings.Contains(string(cp), "--- FAIL: TestThing") || strings.Contains(string(cp), "2026-09-12T16:44:04") {
 		t.Errorf("ci prompt should contain the job log tail without timestamps:\n%s", cp)
 	}
-	// Same head still red → nothing happens.
+	// The fix pushed a new head whose checks are still running → wait.
+	gh.mu.Lock()
+	gh.checks[0]["status"] = "in_progress"
+	gh.mu.Unlock()
 	drive(state.PhaseMonitor)
 	if r.FixRounds != 1 {
-		t.Errorf("CI fix retried on same head")
+		t.Errorf("a pending check must not start another round")
 	}
 
 	// Green again, reviewer requests changes with an inline comment.
 	gh.mu.Lock()
+	gh.checks[0]["status"] = "completed"
 	gh.checks[0]["conclusion"] = "success"
 	gh.reviews = []map[string]any{{"id": 1, "user": map[string]any{"login": "ann"}, "state": "CHANGES_REQUESTED", "body": "please rename", "submitted_at": time.Now()}}
 	gh.rcomments = []map[string]any{{"id": 2, "user": map[string]any{"login": "ann"}, "body": "rename me", "path": "feature.txt", "line": 1, "created_at": time.Now()}}
