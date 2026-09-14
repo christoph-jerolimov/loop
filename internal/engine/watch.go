@@ -9,6 +9,7 @@ import (
 
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/state"
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 // WatchOptions controls the scheduler loop.
@@ -58,7 +59,7 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(driving, r.ID); mu.Unlock() }()
 			if err := e.Drive(ctx, r); err != nil && ctx.Err() == nil {
-				fmt.Fprintf(e.Out, "[%s] error: %v\n", shortID(r), err)
+				fmt.Fprintf(e.Out, "%s %s\n", e.Paint.Paint("["+shortID(r)+"]", term.Dim), e.Paint.Paint(fmt.Sprintf("error: %v", err), term.Red))
 			}
 		}()
 	}
@@ -111,10 +112,10 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 		if o.PickNew && (busy() < e.Cfg.Workflow.Concurrency || len(runs) == 0) {
 			res, err := e.pick(ctx, o, runs)
 			if err != nil {
-				fmt.Fprintf(e.Out, "pick: %v\n", err)
+				fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("pick: %v", err), term.Red))
 			}
 			picked = res.started
-			tell(e, &lastPick, res.note(e.Cfg.Workflow.Concurrency))
+			tell(e, &lastPick, res.note(e.Cfg.Workflow.Concurrency), term.Yellow)
 		}
 		idle := o.ExitWhenIdle && active == parked && picked == 0 && busy() == 0 &&
 			(!o.PickNew || !e.anythingReady(ctx, o))
@@ -122,14 +123,18 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			wg.Wait()
 			switch {
 			case parked > 0:
-				fmt.Fprintf(e.Out, "%d run(s) waiting at a gate; approve with: loop approve <run>\n", parked)
+				fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%d run(s) waiting at a gate; approve with: loop approve <run>", parked), term.Yellow))
 			case len(only) == 0:
-				fmt.Fprintln(e.Out, "nothing left to do")
+				fmt.Fprintln(e.Out, e.Paint.Paint("nothing left to do", term.Dim))
 			}
 			return nil
 		}
 		if active > 0 || len(only) == 0 {
-			tell(e, &lastStatus, tick.String(o.Tick))
+			style := term.Dim
+			if tick.working > 0 {
+				style = term.Cyan
+			}
+			tell(e, &lastStatus, tick.String(o.Tick), style)
 		}
 		select {
 		case <-ctx.Done():
@@ -140,15 +145,16 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 	}
 }
 
-// tell prints line when it differs from what was last printed through the
-// same slot, so a state that does not change is reported once.
-func tell(e *Engine, last *string, line string) {
+// tell prints line in the given styles when it differs from what was last
+// printed through the same slot, so a state that does not change is
+// reported once.
+func tell(e *Engine, last *string, line string, styles ...term.Style) {
 	if line == *last {
 		return
 	}
 	*last = line
 	if line != "" {
-		fmt.Fprintln(e.Out, line)
+		fmt.Fprintln(e.Out, e.Paint.Paint(line, styles...))
 	}
 }
 
@@ -283,7 +289,7 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 	}
 	items, errs := e.Sources.ListAll(ctx, o.Source)
 	for _, err := range errs {
-		fmt.Fprintf(e.Out, "warning: %v\n", err)
+		fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("warning: %v", err), term.Yellow))
 	}
 	res.open = len(items)
 	activeItems := map[string]bool{}
@@ -329,7 +335,7 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 			continue
 		}
 		if _, err := e.Start(ctx, full, o.Force); err != nil {
-			fmt.Fprintf(e.Out, "skip %s: %v\n", it.ID, err)
+			fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("skip %s: %v", it.ID, err), term.Red))
 			res.unloadable++
 			continue
 		}

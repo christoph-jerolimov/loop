@@ -286,7 +286,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	r.PollFailures = 0
 	r.PR.HeadSHA, r.PR.Draft, r.PR.Merged = pr.HeadSHA, pr.Draft, pr.Merged
 	if pr.Merged {
-		e.logf(r, "PR merged")
+		e.okf(r, "PR merged")
 		r.SetPhase(state.PhaseClose, "merged")
 		return false, nil
 	}
@@ -612,7 +612,7 @@ func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 	}
 	r.PR.Merged = true
 	if err := e.runSteps(ctx, r, e.Cfg.Steps.Merged, "merged"); err != nil {
-		e.logf(r, "merged step failed: %v", err)
+		e.failf(r, "merged step failed: %v", err)
 	}
 	r.SetPhase(state.PhaseClose, "")
 	return false, nil
@@ -665,7 +665,7 @@ func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseCleanup, "")
 	if *e.Cfg.Workflow.Cleanup {
 		if err := e.runSteps(ctx, r, e.Cfg.Steps.Cleanup, "cleanup"); err != nil {
-			e.logf(r, "cleanup step failed: %v", err)
+			e.failf(r, "cleanup step failed: %v", err)
 		}
 		e.logf(r, "removing workdir %s", r.Workdir)
 		if e.Cfg.Repo.Workdir == "worktree" {
@@ -681,7 +681,7 @@ func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 		}
 	}
 	r.SetPhase(state.PhaseDone, "")
-	e.logf(r, "done")
+	e.okf(r, "done")
 	return nil
 }
 

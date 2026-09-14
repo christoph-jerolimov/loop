@@ -20,6 +20,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/source"
 	_ "github.com/christoph-jerolimov/loop/internal/source/all"
 	"github.com/christoph-jerolimov/loop/internal/state"
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 // Version is set at build time.
@@ -56,7 +57,7 @@ func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, term.Detect(os.Stderr).Paint("error:", term.Red), err)
 		return err
 	}
 	return nil
@@ -94,6 +95,7 @@ func loadDir(dir string, prefix bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
+	eng.Paint = term.Detect(os.Stdout)
 	eng.Gate = askGate
 	return &app{Cfg: cfg, Sources: srcs, Engine: eng}, nil
 }
@@ -160,7 +162,8 @@ func isTTY() bool {
 }
 
 func askGate(r *state.Run, gate string) bool {
-	fmt.Printf("\n[%s] gate %q reached", r.ItemID, gate)
+	p := term.Detect(os.Stdout)
+	fmt.Printf("\n%s %s", p.Paint("["+r.ItemID+"]", term.Dim), p.Paint(fmt.Sprintf("gate %q reached", gate), term.Yellow))
 	if r.PR != nil {
 		fmt.Printf(" for %s", r.PR.URL)
 	}

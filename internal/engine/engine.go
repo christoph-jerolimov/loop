@@ -22,6 +22,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/source"
 	"github.com/christoph-jerolimov/loop/internal/state"
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 // Engine holds everything a run needs.
@@ -31,6 +32,8 @@ type Engine struct {
 	Store   *state.Store
 	Runner  *agent.Runner
 	Out     io.Writer
+	// Paint colours the output on Out; the zero value writes plain text.
+	Paint term.Painter
 	// Interactive lets gates ask on the terminal instead of parking the run.
 	Interactive bool
 	// Gate is called at a gate when Interactive; it returns true to proceed.
@@ -73,10 +76,37 @@ func (e *Engine) Host() (host.Host, error) {
 // prRef addresses the run's PR for comments.
 func prRef(r *state.Run) host.Ref { return host.Ref{Number: r.PR.Number, PR: true} }
 
+// logf records a line in the run's log and prints it with the run's
+// item id in front.
 func (e *Engine) logf(r *state.Run, format string, a ...any) {
+	e.emit(r, "", format, a...)
+}
+
+// failf is logf for failures: red on a terminal, so they stand out when
+// scanning a long run.
+func (e *Engine) failf(r *state.Run, format string, a ...any) {
+	e.emit(r, term.Red, format, a...)
+}
+
+// notef is logf for lines that wait for a person, such as a gate: yellow
+// on a terminal.
+func (e *Engine) notef(r *state.Run, format string, a ...any) {
+	e.emit(r, term.Yellow, format, a...)
+}
+
+// okf is logf for milestones reached, such as the merge: green on a
+// terminal.
+func (e *Engine) okf(r *state.Run, format string, a ...any) {
+	e.emit(r, term.Green, format, a...)
+}
+
+func (e *Engine) emit(r *state.Run, style term.Style, format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	r.Log("%s", msg)
-	fmt.Fprintf(e.Out, "[%s] %s\n", shortID(r), msg)
+	if style != "" {
+		msg = e.Paint.Paint(msg, style)
+	}
+	fmt.Fprintf(e.Out, "%s %s\n", e.Paint.Paint("["+shortID(r)+"]", term.Dim), msg)
 }
 
 func shortID(r *state.Run) string {
@@ -257,12 +287,12 @@ func (e *Engine) abandon(ctx context.Context, r *state.Run, err error) {
 				_ = h.CreateComment(ctx, prRef(r), fmt.Sprintf("loop stopped driving this PR: %v. Raise `budget` in loop.yaml and run `loop resume %s`.\n\n%s", err, r.ID, loopMarker))
 			}
 		}
-		e.logf(r, "%v", err)
+		e.notef(r, "%v", err)
 		e.block(ctx, r, err.Error())
 		return
 	}
 	r.Fail(err)
-	e.logf(r, "failed: %v", err)
+	e.failf(r, "failed: %v", err)
 	if src := e.Sources.ByName(r.Item.Source); src != nil {
 		_ = src.Comment(ctx, r.Item, fmt.Sprintf("loop run `%s` failed: %v", r.ID, err))
 		_ = src.Release(ctx, r.Item)
@@ -285,7 +315,7 @@ func (e *Engine) notify(ctx context.Context, r *state.Run, steps []config.Step, 
 		return
 	}
 	if err := e.runSteps(ctx, r, steps, phase); err != nil {
-		e.logf(r, "%s step failed: %v", phase, err)
+		e.failf(r, "%s step failed: %v", phase, err)
 	}
 }
 
@@ -534,7 +564,7 @@ func (e *Engine) plan(ctx context.Context, r *state.Run) (bool, error) {
 					note += fmt.Sprintf("\n\nThe implementation starts after `loop approve %s`%s.", r.ID, e.approveHint(r))
 				}
 				if err := src.Comment(ctx, r.Item, note); err != nil {
-					e.logf(r, "post plan: %v", err)
+					e.failf(r, "post plan: %v", err)
 				}
 			}
 			e.logf(r, "plan written to %s and posted on the ticket", r.PlanFile())
@@ -672,7 +702,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	res, err := e.Runner.Run(ctx, agent.Options{
 		Workdir: r.Workdir, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
 		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough,
-		Log: logf, Progress: e.Out,
+		Log: logf, Progress: e.Out, Paint: e.Paint,
 	})
 	sess.Ended = time.Now()
 	if res != nil {
@@ -712,7 +742,7 @@ func (e *Engine) session(ctx context.Context, r *state.Run) error {
 		}
 		_, err = e.runAgent(ctx, r, "session", text, "", 0)
 		if err != nil {
-			e.logf(r, "attempt %d failed: %v", r.Attempt, err)
+			e.failf(r, "attempt %d failed: %v", r.Attempt, err)
 			continue
 		}
 		if err := e.commitLeftovers(ctx, r, "loop: commit remaining changes from agent session"); err != nil {
@@ -903,7 +933,7 @@ func (e *Engine) gate(r *state.Run, name string) bool {
 	}
 	r.Gate = name
 	r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
-	e.logf(r, "waiting at gate %s; continue with: loop approve %s", name, r.ID)
+	e.notef(r, "waiting at gate %s; continue with: loop approve %s", name, r.ID)
 	e.gateNote(context.Background(), r, name)
 	return false
 }
