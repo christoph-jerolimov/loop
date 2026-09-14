@@ -9,8 +9,8 @@ import (
 
 // baseEnv lists the environment variables an agent session always inherits:
 // what the shell, git, the language toolchains and the agent CLIs need to
-// function. Everything else, in particular loop's own GitHub and Jira
-// credentials, is withheld unless listed in agent.env_passthrough.
+// function. Everything else, in particular loop's own GitHub, GitLab and
+// Jira credentials, is withheld unless listed in agent.env_passthrough.
 var baseEnv = []string{
 	// process basics
 	"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "LANGUAGE", "LC_*", "TZ",

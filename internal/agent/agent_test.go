@@ -134,6 +134,7 @@ func TestSessionEnvWithholdsSecrets(t *testing.T) {
 	dir := setupFake(t, "claude")
 	t.Setenv("GITHUB_TOKEN", "ghp_secret")
 	t.Setenv("JIRA_API_TOKEN", "jira_secret")
+	t.Setenv("GITLAB_TOKEN", "glpat_secret")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-agent")
 	t.Setenv("MY_APP_DB", "postgres://x")
 	t.Setenv("OTHER_SECRET", "nope")
@@ -146,7 +147,7 @@ func TestSessionEnvWithholdsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := read(t, filepath.Join(dir, "env"))
-	for _, absent := range []string{"GITHUB_TOKEN=", "JIRA_API_TOKEN=", "OTHER_SECRET="} {
+	for _, absent := range []string{"GITHUB_TOKEN=", "GITLAB_TOKEN=", "JIRA_API_TOKEN=", "OTHER_SECRET="} {
 		if strings.Contains(env, absent) {
 			t.Errorf("session environment must not contain %s:\n%s", absent, env)
 		}

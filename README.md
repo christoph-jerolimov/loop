@@ -8,7 +8,7 @@ review comments until it is merged and the ticket is closed.
 
 ```
 backlog ──▶ checkout ──▶ agent session ──▶ verify ──▶ PR ──▶ monitor ──▶ merge ──▶ close ticket
- (md/GitHub/Jira)  (worktree)   (any harness)    (steps)         (CI, reviews, conflicts → fix rounds)
+ (md/GitHub/GitLab/Jira) (worktree) (any harness) (steps)      (CI, reviews, conflicts → fix rounds)
 ```
 
 ## Install
@@ -26,8 +26,9 @@ go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 
 Requirements: `git`, the CLI of the harness you pick (`claude`, Cursor's
 `agent`, `codex`, `gemini`, `aider`, `opencode`, `copilot` or `amp`; or
-any script for `runner: custom`), and a GitHub token (`GITHUB_TOKEN`, or
-`gh auth login`). Jira needs
+any script for `runner: custom`), and a token for the code host:
+`GITHUB_TOKEN` (or `gh auth login`) for GitHub, `GITLAB_TOKEN` for GitLab,
+also self-hosted. Jira needs
 `JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud) or `JIRA_TOKEN` (Server). On
 Windows, `run:` steps need an `sh` on the `PATH` (Git for Windows provides
 one); `script:` and `agent:` steps do not.
@@ -73,7 +74,7 @@ git-ignored.
    branch `loop/<id>-<title>`; an existing name gets a `-2`, `-3` suffix.
    Without push access, branches go to a fork (`repo.fork`) and the PR
    opens from there.
-   The item is claimed (frontmatter, GitHub label + comment, Jira label).
+   The item is claimed (frontmatter, GitHub or GitLab label + comment, Jira label).
 3. **Setup.** The `steps.setup` list from `loop.yaml` runs in the workdir:
    shell commands, script files from the project folder, or agent sessions.
    Configured skill folders are symlinked into `.claude/skills/`. The repository's own
@@ -87,8 +88,8 @@ git-ignored.
    ticket. A `before-code` gate lets a person approve the plan before any
    code is written, from the terminal or with `/loop approve` on the issue.
 5. **Session.** The session prompt template is rendered with the item (and
-   its ticket comments, if the template uses them; on GitHub only comments
-   by the owner and collaborators with write access, by default), written
+   its ticket comments, if the template uses them; on GitHub and GitLab
+   only comments by the owner and collaborators with write access, by default), written
    to a file in the run folder, and the agent loads it from there and runs
    headlessly. Fix rounds work the same way. The agent commits its work and writes a PR summary. Up to
    `agent.attempts` tries. Join a running or finished session at any time:
@@ -98,7 +99,8 @@ git-ignored.
    a second session then reviews the diff and its findings get one free fix
    round before anyone else sees the branch.
 7. **PR.** The branch is pushed and a (draft) PR is opened from a template,
-   linked to the ticket (`Closes #n` for GitHub issues).
+   linked to the ticket (`Closes #n` for GitHub and GitLab issues). On
+   GitLab that is a merge request; everything below applies the same way.
 8. **Monitor.** The PR is polled. A merge conflict is merged with git or, if
    that fails, by an agent session. New review comments or a red CI start a
    fix session driven by the review or CI prompt template, with the failing
@@ -110,12 +112,12 @@ git-ignored.
    If a person pushes to the branch, loop stops driving the PR and leaves
    it to them (`workflow.on_human_push`).
 9. **Merge.** Depending on `workflow.merge`: never (`manual`), `when-green`,
-   `when-green-and-approved`, or leave it to GitHub (`github-auto-merge`).
+   `when-green-and-approved`, or leave it to the host (`auto-merge`).
    Optional gates (`before-pr`, `before-fix`, `before-merge`) pause the run
    until `loop approve <run>`, or until a collaborator comments
    `/loop approve` on the PR.
 10. **Close.** The item is done when the ticket is closed. loop closes it
-   after the merge (or GitHub does through the closing keyword), then removes
+   after the merge (or the host does through the closing keyword), then removes
    the worktree and the remote branch.
 
 Every step is idempotent and persisted in `.loop/runs/<run>/run.yaml`, so a
@@ -151,7 +153,7 @@ Items are addressed by anything a source understands: `login.md`, `#12`,
 
 ## Dependencies between items
 
-Everywhere (markdown, GitHub, Jira) a line in the description that starts
+Everywhere (markdown, GitHub, GitLab, Jira) a line in the description that starts
 with `depends on:` lists references, separated by commas or spaces:
 
 ```

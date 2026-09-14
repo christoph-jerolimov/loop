@@ -18,10 +18,21 @@ syntax (`45m`, `1h30m`, `90s`).
 | `workdir` | `worktree` | `worktree` keeps one base clone in `.loop/repo` and adds a worktree per run; `clone` makes a full clone per run. |
 | `branch_prefix` | `loop/` | Prefix for run branches. |
 | `github` | derived from `url` | `owner/name` used for the GitHub API. Set it when the URL is not a github.com URL. |
-| `fork` | none | `owner/name` of a fork to push branches to when you have no push access to the repository. Pull requests open from the fork against `github`. |
-| `push_url` | derived from `url` and `fork` | Git URL of the fork; set it when `url` is not a github.com URL. |
+| `gitlab` | derived from `url` | Project path (`group/subgroup/project`) used for the GitLab API. Derived when the URL's host contains `gitlab`; set it for other hosts. Exactly one of `github` and `gitlab` is set; it decides where pull requests (merge requests on GitLab) open. |
+| `gitlab_url` | `https://<host of url>` | The GitLab instance, for self-hosted GitLab. |
+| `fork` | none | `owner/name` of a fork to push branches to when you have no push access to the repository. Pull requests open from the fork against the repository. |
+| `push_url` | derived from `url` and `fork` | Git URL of the fork; set it when loop cannot rewrite `url` (it handles `https://`, `ssh://` and `git@host:` URLs). |
 
-Set `GITHUB_API_URL` for GitHub Enterprise.
+Credentials: `GITHUB_TOKEN` (or `gh auth login`) for GitHub, `GITLAB_TOKEN`
+(a personal or project access token with the `api` scope) for GitLab. Set
+`GITHUB_API_URL` for GitHub Enterprise.
+
+On GitLab, loop opens merge requests, reads approvals, reviewer states
+(`requested_changes`), diff discussions and notes, pipeline jobs and
+external commit statuses, retries a failed pipeline once, replies in and
+resolves discussions, posts its own status on the commit, and merges with
+`squash` when `merge_method` is `squash`; `rebase` and `merge` leave the
+project's merge method in charge. `pr.reviewers` are GitLab usernames.
 
 ## `sources`
 
@@ -32,11 +43,11 @@ Common keys:
 | Key | Default | Description |
 | --- | --- | --- |
 | `name` | the type | Unique name; item ids are `<name>:<native id>`. |
-| `type` | required | `markdown`, `github` or `jira`. |
+| `type` | required | `markdown`, `github`, `gitlab` or `jira`. |
 | `labels` | none | Only items carrying all of these labels are listed. Recommended: `[ready-for-agent]`. |
 | `claim` | `false` (`true` when `claim_label` is set) | Mark items in progress so two loops never pick the same one. |
-| `claim_label` | `loop:in-progress` | Label used by GitHub and Jira for the claim. |
-| `comments` | `writers` for GitHub, `all` otherwise | Whose ticket comments are loaded into the template data (`.Item.Comments`): `all`, `writers` (GitHub only: the repository owner and collaborators with write access, checked per author) or `none`. See [security](security.md#prompt-injection-from-tickets). |
+| `claim_label` | `loop:in-progress` | Label used by GitHub, GitLab and Jira for the claim. |
+| `comments` | `writers` for GitHub and GitLab, `all` otherwise | Whose ticket comments are loaded into the template data (`.Item.Comments`): `all`, `writers` (GitHub and GitLab only: the repository owner and collaborators with write access, or members with developer access, checked per author) or `none`. See [security](security.md#prompt-injection-from-tickets). |
 
 ### Priority
 
@@ -78,6 +89,21 @@ gets a minimal one. Loop notes are appended under a `## Loop log` heading.
 
 Claiming adds the label and a comment with the run id. Closing happens
 through `Closes #n` in the PR body or explicitly after the merge.
+
+### `type: gitlab`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `repo` | `repo.gitlab` | Project path (`group/project`) whose issues form the backlog. |
+| `url` | `repo.gitlab_url` | The GitLab instance. |
+
+Issues are listed with `scope: all`, so issues of others count too. Labels
+give the priority the same way as on GitHub (`P1`, `priority::high`, ...).
+Claiming adds the label and a note with the run id. Closing happens through
+`Closes #n` in the merge request description or explicitly after the merge.
+`/loop approve` and `/loop resume` work as notes on the issue and on the
+merge request for members with developer access or more. Credentials:
+`GITLAB_TOKEN`.
 
 ### `type: jira`
 
@@ -339,7 +365,7 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `poll_interval` | `60s` | How often open PRs are polled. |
 | `fix_rounds` | `3` | Review, CI and verify fix sessions per run. |
 | `conflict_attempts` | `1` | Conflict resolution sessions per run. |
-| `merge` | `manual` | `manual`, `when-green`, `when-green-and-approved`, `github-auto-merge`. |
+| `merge` | `manual` | `manual`, `when-green`, `when-green-and-approved`, `auto-merge` (the host merges: GitHub's auto-merge, GitLab's merge when pipeline succeeds). |
 | `merge_method` | `squash` | `squash`, `merge` or `rebase`. |
 | `delete_branch` | `true` | Delete the remote branch after the merge. |
 | `close_issue_on_merge` | `true` | Close the ticket after the merge. When `false`, loop waits until someone closes it. |
@@ -348,9 +374,9 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `self_review` | `false` | Let a second session review the diff before the PR opens and fix its findings in one free round. See [self-review](workflow.md#self-review-before-the-pr). |
 | `concurrency` | `1` | Runs in an agent, verify or fix phase at the same time. |
 | `required_checks` | all | Only these check names decide green or red. |
-| `ci_log_lines` | `200` | Lines from the end of a failed GitHub Actions job log passed to the CI fix prompt. `0` disables log fetching. |
+| `ci_log_lines` | `200` | Lines from the end of a failed CI job log (GitHub Actions, GitLab CI) passed to the CI fix prompt. `0` disables log fetching. |
 | `pr_status` | `true` | Post loop's phase, fix rounds and outcome as a commit status named `loop` on the PR head. See [loop's status on the PR](workflow.md#loops-status-on-the-pr). |
-| `ci_rerun` | `true` | Re-run the failed GitHub Actions jobs once per head commit before starting a CI fix round, so a flaky job does not cost an agent session. Checks from other apps cannot be re-run. |
+| `ci_rerun` | `true` | Re-run the failed GitHub Actions jobs (retry the GitLab pipeline) once per head commit before starting a CI fix round, so a flaky job does not cost an agent session. Checks from other apps cannot be re-run. |
 | `cleanup` | `true` | Remove the workdir when the item is closed. |
 | `pr_commands` | `true` | Let collaborators with push access drive a run from the PR: `/loop approve` releases a gate, `/loop resume` restarts a blocked run. |
 | `on_human_push` | `pause` | What happens when someone other than loop pushes to the run branch: `pause` parks the run with a note on the PR, `continue` fast-forwards the worktree and keeps driving on top of their commits. See [workflow](workflow.md#phases). |

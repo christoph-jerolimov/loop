@@ -2,7 +2,8 @@
 name: my-service
 
 repo:
-  url: git@github.com:my-org/my-service.git
+  url: git@github.com:my-org/my-service.git   # github.com or gitlab URLs are recognised
+  # github: my-org/my-service   (derived from url; or gitlab: group/project + gitlab_url)
   base: main
   workdir: worktree          # worktree (default, fast) or clone
   branch_prefix: loop/
@@ -22,6 +23,13 @@ sources:
     labels: [ready-for-agent]   # recommended: only pick explicitly marked issues
     claim_label: loop:in-progress
     comments: writers           # all | writers (owner + write access, default) | none
+
+  # - name: gl
+  #   type: gitlab
+  #   # repo: group/project      (defaults to repo.gitlab)
+  #   # url: https://gitlab.example.com
+  #   labels: [ready-for-agent]
+  #   claim_label: loop:in-progress
 
   # - name: jira
   #   type: jira
@@ -62,7 +70,7 @@ agent:
   timeout: 45m
   max_turns: 200
   attempts: 2                # retries for the initial session
-  # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN or JIRA_*
+  # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN, GITLAB_TOKEN or JIRA_*
   # skills:                  # folders symlinked into <workdir>/.claude/skills
   #   - ~/skills/my-team-conventions
 
@@ -89,7 +97,7 @@ pr:
   # body: prompts/pr-body.md
   reviewers: []
   labels: []
-  link_issue: true           # "Closes #n" for GitHub issues
+  link_issue: true           # "Closes #n" for GitHub and GitLab issues
 
 # budget:                    # zero or absent means no cap
 #   run_cost: 5              # USD per run (harnesses that report cost)
@@ -101,7 +109,7 @@ workflow:
   poll_interval: 60s
   fix_rounds: 3              # review/CI fix sessions per run
   conflict_attempts: 1
-  merge: manual              # manual | when-green | when-green-and-approved | github-auto-merge
+  merge: manual              # manual | when-green | when-green-and-approved | auto-merge
   merge_method: squash
   delete_branch: true
   close_issue_on_merge: true # item is done only when the ticket is closed

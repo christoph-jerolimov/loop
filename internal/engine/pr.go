@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/christoph-jerolimov/loop/internal/config"
-	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
+	"github.com/christoph-jerolimov/loop/internal/host"
 	"github.com/christoph-jerolimov/loop/internal/httpx"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
@@ -24,7 +24,7 @@ const loopMarker = "<!-- loop -->"
 
 func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 	r.SetPhase(state.PhasePR, "")
-	gh, err := e.GitHub()
+	h, err := e.Host()
 	if err != nil {
 		e.abandon(ctx, r, err)
 		return false, err
@@ -42,7 +42,7 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 	r.LastPushSHA = sha
 
 	// Reuse an existing PR for the branch (e.g. after a crash).
-	pr, err := gh.FindPullRequestByHead(ctx, e.Cfg.Repo.HeadRef(r.Branch))
+	pr, err := h.FindPullRequestByHead(ctx, r.Branch)
 	if err != nil {
 		e.abandon(ctx, r, err)
 		return false, err
@@ -76,42 +76,43 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 			body += "\n" + kw + "\n"
 		}
 		body += "\n" + loopMarker + "\n"
-		pr, err = gh.CreatePullRequest(ctx, title, body, e.Cfg.Repo.HeadRef(r.Branch), e.Cfg.Repo.Base, *e.Cfg.PR.Draft)
+		pr, err = h.CreatePullRequest(ctx, title, body, r.Branch, e.Cfg.Repo.Base, *e.Cfg.PR.Draft)
 		if err != nil {
 			e.abandon(ctx, r, fmt.Errorf("create PR: %w", err))
 			return false, err
 		}
-		e.logf(r, "opened PR %s", pr.HTMLURL)
+		e.logf(r, "opened PR %s", pr.URL)
 		if len(e.Cfg.PR.Labels) > 0 {
-			_ = gh.AddLabels(ctx, pr.Number, e.Cfg.PR.Labels)
+			_ = h.AddLabels(ctx, pr.Number, e.Cfg.PR.Labels)
 		}
-		if err := gh.RequestReviewers(ctx, pr.Number, e.Cfg.PR.Reviewers); err != nil {
+		if err := h.RequestReviewers(ctx, pr.Number, e.Cfg.PR.Reviewers); err != nil {
 			e.logf(r, "request reviewers: %v", err)
 		}
-		if e.Cfg.Workflow.Merge == config.MergeGitHubAuto {
-			if err := gh.EnableAutoMerge(ctx, pr.NodeID, e.Cfg.Workflow.MergeMethod); err != nil {
+		if e.Cfg.Workflow.Merge == config.MergeAuto {
+			if err := h.EnableAutoMerge(ctx, pr, e.Cfg.Workflow.MergeMethod); err != nil {
 				e.logf(r, "enable auto-merge: %v (is auto-merge allowed in the repository settings?)", err)
 			}
 		}
 	} else {
-		e.logf(r, "reusing existing PR %s", pr.HTMLURL)
+		e.logf(r, "reusing existing PR %s", pr.URL)
 	}
-	r.PR = &state.PR{Number: pr.Number, NodeID: pr.NodeID, URL: pr.HTMLURL, HeadSHA: pr.Head.SHA, Draft: pr.Draft}
+	r.PR = &state.PR{Number: pr.Number, NodeID: pr.ID, URL: pr.URL, HeadSHA: pr.HeadSHA, Draft: pr.Draft}
 	if src := e.Sources.ByName(r.Item.Source); src != nil {
-		_ = src.Comment(ctx, r.Item, fmt.Sprintf("loop opened pull request %s (run `%s`).", pr.HTMLURL, r.ID))
+		_ = src.Comment(ctx, r.Item, fmt.Sprintf("loop opened pull request %s (run `%s`).", pr.URL, r.ID))
 	}
 	r.SetPhase(state.PhaseMonitor, "")
 	r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
 	return true, nil
 }
 
-// closingKeyword links the PR to a GitHub issue so merging closes it.
+// closingKeyword links the PR to an issue on the same host so merging
+// closes it.
 func (e *Engine) closingKeyword(r *state.Run) string {
-	if !*e.Cfg.PR.LinkIssue || r.Item.SourceType != "github" {
+	if !*e.Cfg.PR.LinkIssue || r.Item.SourceType != e.Cfg.Repo.Host() {
 		return ""
 	}
 	repo := r.Item.Extra["repo"]
-	if strings.EqualFold(repo, e.Cfg.Repo.GitHub) {
+	if strings.EqualFold(repo, e.Cfg.Repo.Project()) {
 		return "Closes #" + r.Item.NativeID
 	}
 	return "Closes " + repo + "#" + r.Item.NativeID
@@ -121,14 +122,14 @@ func (e *Engine) closingKeyword(r *state.Run) string {
 type ciState struct {
 	Pending bool
 	Failed  []prompt.Check
-	// workflowRuns are the Actions workflow runs behind the failed checks,
-	// the ones loop can ask to re-run.
-	workflowRuns []int64
+	// ciRuns are the CI runs (workflow runs, pipelines) behind the failed
+	// checks, the ones loop can ask to re-run.
+	ciRuns []int64
 }
 
-func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState, error) {
+func (e *Engine) ci(ctx context.Context, h host.Host, sha string) (ciState, error) {
 	var st ciState
-	runs, err := gh.ListCheckRuns(ctx, sha)
+	checks, err := h.ListChecks(ctx, sha)
 	if err != nil {
 		return st, err
 	}
@@ -136,63 +137,42 @@ func (e *Engine) ci(ctx context.Context, gh *ghapi.Client, sha string) (ciState,
 	for _, n := range e.Cfg.Workflow.RequiredChecks {
 		required[n] = true
 	}
-	for _, c := range runs {
-		if len(required) > 0 && !required[c.Name] {
+	for _, c := range checks {
+		if c.Name == statusContext || len(required) > 0 && !required[c.Name] {
 			continue
 		}
 		if c.Status != "completed" {
 			st.Pending = true
 			continue
 		}
-		switch c.Conclusion {
-		case "failure", "timed_out", "cancelled", "action_required", "startup_failure":
-			url := c.HTMLURL
-			if url == "" {
-				url = c.DetailsURL
+		if c.Failed() {
+			st.Failed = append(st.Failed, prompt.Check{Name: c.Name, Conclusion: c.Conclusion, URL: c.URL, Summary: c.Summary, Text: c.Text, Log: e.jobLog(ctx, h, c)})
+			if c.RunID != 0 && !containsID(st.ciRuns, c.RunID) {
+				st.ciRuns = append(st.ciRuns, c.RunID)
 			}
-			st.Failed = append(st.Failed, prompt.Check{Name: c.Name, Conclusion: c.Conclusion, URL: url, Summary: c.Output.Summary, Text: c.Output.Text, Log: e.jobLog(ctx, gh, c)})
-			if id := c.WorkflowRunID(); id != 0 && !containsID(st.workflowRuns, id) {
-				st.workflowRuns = append(st.workflowRuns, id)
-			}
-		}
-	}
-	_, statuses, err := gh.CombinedStatus(ctx, sha)
-	if err != nil {
-		return st, err
-	}
-	for _, s := range statuses {
-		if s.Context == statusContext || len(required) > 0 && !required[s.Context] {
-			continue
-		}
-		switch s.State {
-		case "pending":
-			st.Pending = true
-		case "failure", "error":
-			st.Failed = append(st.Failed, prompt.Check{Name: s.Context, Conclusion: s.State, URL: s.TargetURL, Summary: s.Description})
 		}
 	}
 	return st, nil
 }
 
-// jobLog fetches the tail of a failed GitHub Actions job log. Checks from
-// other apps, disabled log fetching and download errors yield "".
-func (e *Engine) jobLog(ctx context.Context, gh *ghapi.Client, c ghapi.CheckRun) string {
+// jobLog fetches the tail of a failed CI job log. Checks that are not CI
+// jobs, disabled log fetching and download errors yield "".
+func (e *Engine) jobLog(ctx context.Context, h host.Host, c host.Check) string {
 	n := *e.Cfg.Workflow.CILogLines
-	id := c.JobID()
-	if n <= 0 || id == 0 {
+	if n <= 0 || c.JobID == 0 {
 		return ""
 	}
-	log, err := gh.JobLogs(ctx, id)
+	log, err := h.JobLog(ctx, c)
 	if err != nil {
 		return ""
 	}
-	return ghapi.TailLog(log, n)
+	return host.TailLog(log, n)
 }
 
 // approved reports whether the latest review of every reviewer is an
 // approval and at least one exists.
-func (e *Engine) approved(reviews []ghapi.Review) bool {
-	latest := map[string]ghapi.Review{}
+func (e *Engine) approved(reviews []host.Review) bool {
+	latest := map[string]host.Review{}
 	for _, rv := range reviews {
 		if rv.User.Login == e.self || rv.State == "COMMENTED" || rv.State == "PENDING" {
 			continue
@@ -216,9 +196,12 @@ func (e *Engine) approved(reviews []ghapi.Review) bool {
 type feedback struct {
 	Reviews        []prompt.Review
 	ReviewComments []prompt.ReviewComment
-	Comments       []ghapi.Comment
-	reviewIDs      []int64
-	commentIDs     []int64
+	Comments       []host.Comment
+	// inline are the review comments as the host returned them, for the
+	// replies after the round.
+	inline     []host.ReviewComment
+	reviewIDs  []int64
+	commentIDs []int64
 }
 
 func containsID(ids []int64, id int64) bool { return contains(ids, id) }
@@ -233,9 +216,9 @@ func contains(ids []int64, id int64) bool {
 }
 
 // collectFeedback gathers unhandled reviews and comments since the last push.
-func (e *Engine) collectFeedback(ctx context.Context, gh *ghapi.Client, r *state.Run, since time.Time) (*feedback, error) {
+func (e *Engine) collectFeedback(ctx context.Context, h host.Host, r *state.Run, since time.Time) (*feedback, error) {
 	fb := &feedback{}
-	reviews, err := gh.ListReviews(ctx, r.PR.Number)
+	reviews, err := h.ListReviews(ctx, r.PR.Number)
 	if err != nil {
 		return nil, err
 	}
@@ -253,9 +236,9 @@ func (e *Engine) collectFeedback(ctx context.Context, gh *ghapi.Client, r *state
 		if rv.State == "APPROVED" {
 			continue // approvals with a body are not requests
 		}
-		fb.Reviews = append(fb.Reviews, prompt.Review{Author: rv.User.Login, State: rv.State, Body: rv.Body, URL: rv.HTMLURL})
+		fb.Reviews = append(fb.Reviews, prompt.Review{Author: rv.User.Login, State: rv.State, Body: rv.Body, URL: rv.URL})
 	}
-	rcs, err := gh.ListReviewComments(ctx, r.PR.Number)
+	rcs, err := h.ListReviewComments(ctx, r.PR.Number)
 	if err != nil {
 		return nil, err
 	}
@@ -264,9 +247,10 @@ func (e *Engine) collectFeedback(ctx context.Context, gh *ghapi.Client, r *state
 			continue
 		}
 		fb.commentIDs = append(fb.commentIDs, c.ID)
-		fb.ReviewComments = append(fb.ReviewComments, prompt.ReviewComment{ID: c.ID, Author: c.User.Login, Path: c.Path, Line: c.Line, Body: c.Body, DiffHunk: c.DiffHunk, URL: c.HTMLURL})
+		fb.inline = append(fb.inline, c)
+		fb.ReviewComments = append(fb.ReviewComments, prompt.ReviewComment{ID: c.ID, Author: c.User.Login, Path: c.Path, Line: c.Line, Body: c.Body, DiffHunk: c.DiffHunk, URL: c.URL})
 	}
-	ics, err := gh.ListIssueComments(ctx, r.PR.Number)
+	ics, err := h.ListComments(ctx, prRef(r))
 	if err != nil {
 		return nil, err
 	}
@@ -290,17 +274,17 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return true, nil
 	}
 	r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
-	gh, err := e.GitHub()
+	h, err := e.Host()
 	if err != nil {
 		return true, err
 	}
-	pr, err := gh.GetPullRequest(ctx, r.PR.Number)
+	pr, err := h.GetPullRequest(ctx, r.PR.Number)
 	if err != nil {
 		e.pollFailed(r, err)
 		return true, nil
 	}
 	r.PollFailures = 0
-	r.PR.HeadSHA, r.PR.Draft, r.PR.Merged = pr.Head.SHA, pr.Draft, pr.Merged
+	r.PR.HeadSHA, r.PR.Draft, r.PR.Merged = pr.HeadSHA, pr.Draft, pr.Merged
 	if pr.Merged {
 		e.logf(r, "PR merged")
 		r.SetPhase(state.PhaseClose, "merged")
@@ -313,9 +297,9 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 
 	// 1. A human pushed to the branch since loop's last push.
-	if r.LastPushSHA != "" && pr.Head.SHA != r.LastPushSHA {
-		who := e.foreignPushers(ctx, gh, r, r.LastPushSHA)
-		r.LastPushSHA = pr.Head.SHA // the new head is loop's baseline from here on
+	if r.LastPushSHA != "" && pr.HeadSHA != r.LastPushSHA {
+		who := e.foreignPushers(ctx, h, r, r.LastPushSHA)
+		r.LastPushSHA = pr.HeadSHA // the new head is loop's baseline from here on
 		if len(who) > 0 {
 			ffErr := gitx.FastForward(ctx, r.Workdir, e.pushRemote(), r.Branch)
 			if e.Cfg.Workflow.OnHumanPush == config.HumanPushPause {
@@ -342,7 +326,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 
 	// 3. Reviews and comments (anything since the run started that was not handled yet).
-	fb, err := e.collectFeedback(ctx, gh, r, r.Created)
+	fb, err := e.collectFeedback(ctx, h, r, r.Created)
 	if err != nil {
 		e.pollFailed(r, err)
 		return true, nil
@@ -356,25 +340,25 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	}
 
 	// 4. CI.
-	st, err := e.ci(ctx, gh, pr.Head.SHA)
+	st, err := e.ci(ctx, h, pr.HeadSHA)
 	if err != nil {
 		e.pollFailed(r, err)
 		return true, nil
 	}
 	if len(st.Failed) > 0 {
-		if r.LastCIFixSHA == pr.Head.SHA {
+		if r.LastCIFixSHA == pr.HeadSHA {
 			return true, nil // already tried this head; wait for humans or new pushes
 		}
-		if *e.Cfg.Workflow.CIRerun && r.CIRerunSHA != pr.Head.SHA && len(st.workflowRuns) > 0 {
+		if *e.Cfg.Workflow.CIRerun && r.CIRerunSHA != pr.HeadSHA && len(st.ciRuns) > 0 {
 			// A flaky job should not cost an agent session: re-run the
 			// failed jobs once and look again on the next poll.
-			r.CIRerunSHA = pr.Head.SHA
-			for _, id := range st.workflowRuns {
-				if err := gh.RerunFailedJobs(ctx, id); err != nil {
-					e.logf(r, "re-run failed jobs of workflow run %d: %v", id, err)
+			r.CIRerunSHA = pr.HeadSHA
+			for _, id := range st.ciRuns {
+				if err := h.RerunFailed(ctx, id); err != nil {
+					e.logf(r, "re-run failed jobs of CI run %d: %v", id, err)
 				}
 			}
-			e.logf(r, "CI red on %s: re-running the failed jobs once before a fix round", pr.Head.SHA[:min(7, len(pr.Head.SHA))])
+			e.logf(r, "CI red on %s: re-running the failed jobs once before a fix round", pr.HeadSHA[:min(7, len(pr.HeadSHA))])
 			return true, nil
 		}
 		if r.FixRounds >= e.Cfg.Workflow.FixRounds {
@@ -389,7 +373,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	// Green from here on.
 	if pr.Draft {
 		e.logf(r, "CI green, marking PR ready for review")
-		if err := gh.MarkReadyForReview(ctx, pr.NodeID); err != nil {
+		if err := h.MarkReadyForReview(ctx, pr); err != nil {
 			e.logf(r, "mark ready: %v", err)
 		} else {
 			r.PR.Draft = false
@@ -398,12 +382,12 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	switch e.Cfg.Workflow.Merge {
 	case config.MergeWhenGreen:
 	case config.MergeWhenGreenApprove:
-		reviews, err := gh.ListReviews(ctx, r.PR.Number)
+		reviews, err := h.ListReviews(ctx, r.PR.Number)
 		if err != nil || !e.approved(reviews) {
 			return true, nil
 		}
 	default:
-		return true, nil // manual or GitHub auto-merge: keep watching
+		return true, nil // manual or the host's auto-merge: keep watching
 	}
 	if pr.Mergeable != nil && !*pr.Mergeable {
 		return true, nil
@@ -412,12 +396,12 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 	return false, nil
 }
 
-// foreignPushers lists the GitHub logins (or author names) behind the
-// commits on the PR after loop's last push that were not made by loop's
-// own account. When that push is not among the commits any more (a force
-// push), every commit counts.
-func (e *Engine) foreignPushers(ctx context.Context, gh *ghapi.Client, r *state.Run, since string) []string {
-	commits, err := gh.ListPullRequestCommits(ctx, r.PR.Number)
+// foreignPushers lists the logins (or author names) behind the commits on
+// the PR after loop's last push that were not made by loop's own account.
+// When that push is not among the commits any more (a force push), every
+// commit counts.
+func (e *Engine) foreignPushers(ctx context.Context, h host.Host, r *state.Run, since string) []string {
+	commits, err := h.ListPullRequestCommits(ctx, r.PR.Number)
 	if err != nil {
 		e.logf(r, "list PR commits: %v", err)
 		return nil
@@ -431,15 +415,9 @@ func (e *Engine) foreignPushers(ctx context.Context, gh *ghapi.Client, r *state.
 	seen := map[string]bool{}
 	var who []string
 	for _, c := range commits[start:] {
-		login := ""
-		if c.Author != nil {
-			login = c.Author.Login
-		}
-		if login == "" && c.Committer != nil {
-			login = c.Committer.Login
-		}
+		login := c.Author
 		if login == "" {
-			login = c.Commit.Author.Name
+			login = c.Committer
 		}
 		if login == "" || login == e.self || login == "web-flow" || seen[login] {
 			continue
@@ -483,8 +461,8 @@ func (e *Engine) toFix(r *state.Run) (bool, error) {
 // blockOrWait leaves a note on the PR once and parks the run as blocked.
 func (e *Engine) blockOrWait(ctx context.Context, r *state.Run, format string, a ...any) (bool, error) {
 	msg := fmt.Sprintf(format, a...)
-	if gh, err := e.GitHub(); err == nil {
-		_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %s. After handling it, a collaborator with push access can comment `%s`, or run `loop resume %s` where loop runs.\n\n%s", msg, cmdResume, r.ID, loopMarker))
+	if h, err := e.Host(); err == nil {
+		_ = h.CreateComment(ctx, prRef(r), fmt.Sprintf("loop stopped driving this PR: %s. After handling it, a collaborator with push access can comment `%s`, or run `loop resume %s` where loop runs.\n\n%s", msg, cmdResume, r.ID, loopMarker))
 	}
 	e.block(ctx, r, msg)
 	return false, nil
@@ -492,7 +470,7 @@ func (e *Engine) blockOrWait(ctx context.Context, r *state.Run, format string, a
 
 // fix runs one fix round for the pending reason, then pushes.
 func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
-	gh, err := e.GitHub()
+	h, err := e.Host()
 	if err != nil {
 		return false, err
 	}
@@ -530,7 +508,7 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		r.FixRounds++
 		d := e.data(r)
 		d.Round = r.FixRounds
-		fb, ferr := e.collectFeedback(ctx, gh, r, r.Created)
+		fb, ferr := e.collectFeedback(ctx, h, r, r.Created)
 		if ferr != nil {
 			return false, ferr
 		}
@@ -545,7 +523,7 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 			d.RepliesFile = repliesFile
 		}
 		if reason == state.FixCI {
-			st, cerr := e.ci(ctx, gh, r.PR.HeadSHA)
+			st, cerr := e.ci(ctx, h, r.PR.HeadSHA)
 			if cerr != nil {
 				return false, cerr
 			}
@@ -566,7 +544,7 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		if _, aerr := e.runAgent(ctx, r, string(reason), text, "", 0, extra); aerr != nil {
 			return e.blockOrWait(ctx, r, "%s fix session failed: %v", reason, aerr)
 		}
-		defer e.answerReviewers(ctx, gh, r, fb.ReviewComments, repliesFile)
+		defer e.answerReviewers(ctx, h, r, fb.inline, repliesFile)
 		if cerr := e.commitLeftovers(ctx, r, "loop: address "+string(reason)+" feedback"); cerr != nil {
 			return e.blockOrWait(ctx, r, "%v", cerr)
 		}
@@ -587,7 +565,7 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 		}
 		r.LastPushSHA = sha
 		if reason != state.FixConflict {
-			_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("Addressed %s feedback in %s (round %d).\n\n%s", reason, sha[:7], r.FixRounds, loopMarker))
+			_ = h.CreateComment(ctx, prRef(r), fmt.Sprintf("Addressed %s feedback in %s (round %d).\n\n%s", reason, sha[:7], r.FixRounds, loopMarker))
 		}
 	} else {
 		e.logf(r, "%s round produced no new commit", reason)
@@ -597,8 +575,8 @@ func (e *Engine) fix(ctx context.Context, r *state.Run) (bool, error) {
 	return true, nil
 }
 
-// maxMergeAttempts bounds how often a merge rejected by GitHub is retried
-// before the run parks with a note.
+// maxMergeAttempts bounds how often a merge rejected by the host is
+// retried before the run parks with a note.
 const maxMergeAttempts = 3
 
 func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
@@ -606,27 +584,26 @@ func (e *Engine) merge(ctx context.Context, r *state.Run) (bool, error) {
 	if !e.gate(r, config.GateBeforeMerge) {
 		return true, nil
 	}
-	gh, err := e.GitHub()
+	h, err := e.Host()
 	if err != nil {
 		return false, err
 	}
 	// Branch protection can hold a green, approved PR: required reviewers
 	// loop cannot satisfy, required checks that never report, or a
-	// "require branches to be up to date" rule. GitHub reports that as
-	// mergeable_state "blocked"; there is nothing loop can do about it, so
+	// "require branches to be up to date" rule. The host reports that as
+	// a blocked mergeable state; there is nothing loop can do about it, so
 	// park the run with one note instead of retrying every poll.
-	if pr, perr := gh.GetPullRequest(ctx, r.PR.Number); perr == nil && pr.MergeableState == "blocked" {
+	if pr, perr := h.GetPullRequest(ctx, r.PR.Number); perr == nil && pr.MergeableState == "blocked" {
 		return e.blockOrWait(ctx, r, "merge blocked by branch protection (mergeable_state=blocked): it needs reviews, checks or an update loop cannot provide")
 	}
 	e.logf(r, "merging PR #%d (%s)", r.PR.Number, e.Cfg.Workflow.MergeMethod)
-	if err := gh.MergePullRequest(ctx, r.PR.Number, e.Cfg.Workflow.MergeMethod, ""); err != nil {
-		var ge *ghapi.Error
-		if errors.As(err, &ge) && (ge.Status == 405 || ge.Status == 409) {
+	if err := h.MergePullRequest(ctx, r.PR.Number, e.Cfg.Workflow.MergeMethod); err != nil {
+		if code := host.Status(err); code == 405 || code == 406 || code == 409 {
 			r.MergeAttempts++
 			if r.MergeAttempts >= maxMergeAttempts {
-				return e.blockOrWait(ctx, r, "GitHub rejected the merge %d times (%s)", r.MergeAttempts, firstLine(ge.Body))
+				return e.blockOrWait(ctx, r, "%s rejected the merge %d times (%s)", h.Name(), r.MergeAttempts, firstLine(host.Body(err)))
 			}
-			e.logf(r, "not mergeable right now (%s); will retry (%d/%d)", firstLine(ge.Body), r.MergeAttempts, maxMergeAttempts)
+			e.logf(r, "not mergeable right now (%s); will retry (%d/%d)", firstLine(host.Body(err)), r.MergeAttempts, maxMergeAttempts)
 			r.SetPhase(state.PhaseMonitor, "merge rejected")
 			r.NextPoll = time.Now().Add(e.Cfg.Workflow.PollInterval.D())
 			return true, nil
@@ -698,8 +675,8 @@ func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 			_ = os.RemoveAll(r.Workdir)
 		}
 		if *e.Cfg.Workflow.DeleteBranch && r.PR != nil && r.PR.Merged {
-			if gh, err := e.pushGitHub(); err == nil {
-				_ = gh.DeleteBranch(ctx, r.Branch)
+			if h, err := e.Host(); err == nil {
+				_ = h.DeleteBranch(ctx, r.Branch)
 			}
 		}
 	}
@@ -737,8 +714,8 @@ func (e *Engine) Resume(r *state.Run) error {
 	return e.Store.Save(r)
 }
 
-func itemComment(c ghapi.Comment) item.Comment {
-	return item.Comment{Author: c.User.Login, Body: c.Body, Created: c.CreatedAt, URL: c.HTMLURL}
+func itemComment(c host.Comment) item.Comment {
+	return item.Comment{Author: c.User.Login, Body: c.Body, Created: c.CreatedAt, URL: c.URL}
 }
 
 // reviewReply is one entry of the replies file a review session writes.
@@ -752,7 +729,7 @@ type reviewReply struct {
 // resolves the ones the agent marked done. Comments the agent did not
 // report on get a neutral note pointing at the pushed commit, so no thread
 // is left without an answer. Failures are logged, never fatal.
-func (e *Engine) answerReviewers(ctx context.Context, gh *ghapi.Client, r *state.Run, comments []prompt.ReviewComment, repliesFile string) {
+func (e *Engine) answerReviewers(ctx context.Context, h host.Host, r *state.Run, comments []host.ReviewComment, repliesFile string) {
 	if len(comments) == 0 {
 		return
 	}
@@ -768,10 +745,6 @@ func (e *Engine) answerReviewers(ctx context.Context, gh *ghapi.Client, r *state
 			}
 		}
 	}
-	threads, terr := gh.ReviewThreads(ctx, r.PR.Number)
-	if terr != nil {
-		e.logf(r, "review threads: %v", terr)
-	}
 	short := r.LastPushSHA
 	if len(short) > 7 {
 		short = short[:7]
@@ -785,28 +758,17 @@ func (e *Engine) answerReviewers(ctx context.Context, gh *ghapi.Client, r *state
 		} else if short != "" {
 			body += fmt.Sprintf(" (round %d, %s)", r.FixRounds, short)
 		}
-		if err := gh.ReplyToReviewComment(ctx, r.PR.Number, c.ID, body+"\n\n"+loopMarker); err != nil {
+		if err := h.ReplyToReviewComment(ctx, r.PR.Number, c, body+"\n\n"+loopMarker); err != nil {
 			e.logf(r, "reply to comment %d: %v", c.ID, err)
 			continue
 		}
 		if rp.Resolved {
-			if t, found := threads[c.ID]; found && !t.Resolved {
-				if err := gh.ResolveReviewThread(ctx, t.ID); err != nil {
-					e.logf(r, "resolve thread of comment %d: %v", c.ID, err)
-				}
+			if err := h.ResolveReviewThread(ctx, r.PR.Number, c); err != nil {
+				e.logf(r, "resolve thread of comment %d: %v", c.ID, err)
 			}
 		}
 	}
 	e.logf(r, "answered %d review thread(s)", len(comments))
-}
-
-// pushGitHub returns the API client for the repository branches are
-// pushed to: the fork when configured, otherwise the repository itself.
-func (e *Engine) pushGitHub() (*ghapi.Client, error) {
-	if e.Cfg.Repo.Fork == "" {
-		return e.GitHub()
-	}
-	return ghapi.New(e.Cfg.Repo.Fork)
 }
 
 // RemoveWorkdir deletes the run's checkout without touching the remote.

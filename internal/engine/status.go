@@ -12,7 +12,7 @@ import (
 const statusContext = "loop"
 
 // reportStatus posts the run's phase and outcome as a commit status on
-// the PR head, once per change, so reviewers see on GitHub what loop is
+// the PR head, once per change, so reviewers see on the host what loop is
 // doing without running loop status. Failures are logged, never fatal.
 func (e *Engine) reportStatus(ctx context.Context, r *state.Run) {
 	if e.Cfg.Workflow.PRStatus == nil || !*e.Cfg.Workflow.PRStatus || r.PR == nil || r.PR.HeadSHA == "" {
@@ -23,11 +23,11 @@ func (e *Engine) reportStatus(ctx context.Context, r *state.Run) {
 	if key == r.LastStatus {
 		return
 	}
-	gh, err := e.GitHub()
+	h, err := e.Host()
 	if err != nil {
 		return
 	}
-	if err := gh.SetStatus(ctx, r.PR.HeadSHA, statusContext, st, desc, r.Item.URL); err != nil {
+	if err := h.SetStatus(ctx, r.PR.HeadSHA, statusContext, st, desc, r.Item.URL); err != nil {
 		e.logf(r, "pr status: %v", err)
 		return
 	}

@@ -16,8 +16,8 @@ import (
 
 	"github.com/christoph-jerolimov/loop/internal/agent"
 	"github.com/christoph-jerolimov/loop/internal/config"
-	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
+	"github.com/christoph-jerolimov/loop/internal/host"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/source"
@@ -36,10 +36,10 @@ type Engine struct {
 	// Gate is called at a gate when Interactive; it returns true to proceed.
 	Gate func(r *state.Run, gate string) bool
 
-	gh     *ghapi.Client
-	ghOnce sync.Once
-	ghErr  error
-	self   string
+	host     host.Host
+	hostOnce sync.Once
+	hostErr  error
+	self     string
 	// budgetNoted keeps the "not picking" line to once per budget stop.
 	budgetNoted bool
 
@@ -61,16 +61,19 @@ func New(cfg *config.Config, sources source.Set, out io.Writer) (*Engine, error)
 	}, nil
 }
 
-// GitHub returns the API client for the target repository.
-func (e *Engine) GitHub() (*ghapi.Client, error) {
-	e.ghOnce.Do(func() {
-		e.gh, e.ghErr = ghapi.New(e.Cfg.Repo.GitHub)
-		if e.ghErr == nil {
-			e.self, _ = e.gh.Viewer(context.Background())
+// Host returns the code host client for the target repository.
+func (e *Engine) Host() (host.Host, error) {
+	e.hostOnce.Do(func() {
+		e.host, e.hostErr = host.New(e.Cfg.Repo)
+		if e.hostErr == nil {
+			e.self, _ = e.host.Viewer(context.Background())
 		}
 	})
-	return e.gh, e.ghErr
+	return e.host, e.hostErr
 }
+
+// prRef addresses the run's PR for comments.
+func prRef(r *state.Run) host.Ref { return host.Ref{Number: r.PR.Number, PR: true} }
 
 func (e *Engine) logf(r *state.Run, format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
@@ -252,8 +255,8 @@ func (e *Engine) abandon(ctx context.Context, r *state.Run, err error) {
 	if isBudget(err) {
 		// Not a failure: raise the budget in loop.yaml and resume.
 		if r.PR != nil {
-			if gh, gerr := e.GitHub(); gerr == nil {
-				_ = gh.CreateComment(ctx, r.PR.Number, fmt.Sprintf("loop stopped driving this PR: %v. Raise `budget` in loop.yaml and run `loop resume %s`.\n\n%s", err, r.ID, loopMarker))
+			if h, herr := e.Host(); herr == nil {
+				_ = h.CreateComment(ctx, prRef(r), fmt.Sprintf("loop stopped driving this PR: %v. Raise `budget` in loop.yaml and run `loop resume %s`.\n\n%s", err, r.ID, loopMarker))
 			}
 		}
 		e.logf(r, "%v", err)
@@ -546,10 +549,11 @@ func (e *Engine) plan(ctx context.Context, r *state.Run) (bool, error) {
 	return false, nil
 }
 
-// approveHint names the ticket-side command when the item is a GitHub
-// issue of the repository, where "/loop approve" works before a PR exists.
+// approveHint names the ticket-side command when the item is an issue of
+// the repository on its host, where "/loop approve" works before a PR
+// exists.
 func (e *Engine) approveHint(r *state.Run) string {
-	if e.commandIssue(r) == 0 || r.PR != nil {
+	if e.commandIssue(r).Number == 0 || r.PR != nil {
 		return ""
 	}
 	return " or a `" + cmdApprove + "` comment here from a collaborator with push access"

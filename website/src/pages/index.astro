@@ -49,7 +49,7 @@ loop watch --pick         # long-running worker`;
       <p class="eyebrow">CLI for teams that ship with coding agents</p>
       <h1>Your backlog, <em>worked by agents</em>, delivered as merged PRs.</h1>
       <p class="lead">
-        loop picks ideas, goals and tickets from markdown, GitHub issues or Jira, runs Claude Code, Cursor, Codex, Gemini, Aider, OpenCode, Copilot, Amp or your own script in a fresh worktree, opens a pull request, and keeps driving it through CI and review until it is merged and the ticket is closed.
+        loop picks ideas, goals and tickets from markdown, GitHub or GitLab issues or Jira, runs Claude Code, Cursor, Codex, Gemini, Aider, OpenCode, Copilot, Amp or your own script in a fresh worktree, opens a pull request, and keeps driving it through CI and review until it is merged and the ticket is closed.
       </p>
       <div class="actions">
         <a class="btn primary" href={href('/docs/')}>Read the docs</a>
@@ -113,10 +113,10 @@ loop watch --pick         # long-running worker`;
     <p class="eyebrow">Built for real repositories</p>
     <h2>What you get</h2>
     <div class="features">
-      <div class="feature"><h3>Three backlog sources</h3><p>Markdown files with frontmatter, GitHub issues filtered by label, and Jira via JQL. Mix them in one project; references resolve across sources. GitHub comments reach the prompt only from the repository owner and collaborators with write access unless you opt in to all.</p></div>
+      <div class="feature"><h3>Four backlog sources, two code hosts</h3><p>Markdown files with frontmatter, GitHub or GitLab issues filtered by label, and Jira via JQL. Mix them in one project; references resolve across sources. Pull requests on GitHub, merge requests on GitLab (also self-hosted), with the same fix rounds, replies and merge policies. Ticket comments reach the prompt only from the repository owner and members with write access unless you opt in to all.</p></div>
       <div class="feature"><h3>Dependencies that mean it</h3><p>A ticket that says <code>depends on: #12, PROJ-7</code> waits until both are closed. <code>loop run --force</code> when you know better, <code>loop run --dry-run</code> to see branch, harness, steps and prompt before anything starts.</p></div>
       <div class="feature"><h3>Bounded fix rounds</h3><p>Review feedback, failing checks (re-run once first, then with the job log) and merge conflicts each get their own prompt template and a hard limit. Every review thread gets an answer and is resolved when done. Past it, or as soon as a person pushes to the branch, the run parks with a note on the PR and runs your <code>steps.blocked</code> notification.</p></div>
-      <div class="feature"><h3>Merge policies and gates</h3><p><code>manual</code>, <code>when-green</code>, <code>when-green-and-approved</code> or GitHub auto-merge. Pause before the PR, before fixes or before the merge until <code>loop approve</code>, or a <code>/loop approve</code> comment on the PR.</p></div>
+      <div class="feature"><h3>Merge policies and gates</h3><p><code>manual</code>, <code>when-green</code>, <code>when-green-and-approved</code> or the host's auto-merge. Pause before the PR, before fixes or before the merge until <code>loop approve</code>, or a <code>/loop approve</code> comment on the PR.</p></div>
       <div class="feature"><h3>Any harness</h3><p>One generic runner with profiles for Claude Code, Cursor, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI and Amp, each a few lines you can override, plus <code>runner: custom</code> for any script that reads the prompt file. Pick one per project, or per invocation with <code>--runner</code>. Your repository's own <code>CLAUDE.md</code>, <code>AGENTS.md</code> or rules apply, and loop's own tokens never reach the agent.</p></div>
       <div class="feature"><h3>Forks and many projects</h3><p>No push access? Branches go to your fork and the PR opens from there. One <code>loop watch ~/loops/*</code> drives every project you have.</p></div>
       <div class="feature"><h3>Inspectable runs</h3><p>Each run keeps its <code>run.yaml</code>, every prompt as the file the agent was started from, every agent transcript and the PR summary. <code>loop status</code> shows where things stand (and a <code>loop</code> commit status on the PR shows it to reviewers), <code>loop logs -f</code> follows a session live, <code>loop stats</code> adds merged PRs, fix rounds and cost. A <code>budget</code> caps cost and agent time per run and per day.</p></div>
@@ -128,7 +128,7 @@ loop watch --pick         # long-running worker`;
       <div class="prose">
         <p class="eyebrow">Quick start</p>
         <h2>Five minutes to the first PR</h2>
-        <p>You need <code>git</code>, the CLI of the harness you pick (<code>claude</code> by default), and a GitHub token. Jira needs an API token as well. <code>loop doctor</code> checks all of it before the first run.</p>
+        <p>You need <code>git</code>, the CLI of the harness you pick (<code>claude</code> by default), and a GitHub or GitLab token. Jira needs an API token as well. <code>loop doctor</code> checks all of it before the first run.</p>
         <p>Start with <code>merge: manual</code>: loop opens the PR, keeps it green and leaves the merge to you until you trust the workflow.</p>
         <p><a href={href('/docs/workflow/')}>Workflow, gates and merge policies →</a></p>
       </div>
