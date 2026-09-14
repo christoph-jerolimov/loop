@@ -200,6 +200,14 @@ func TestWatchSeveralProjectsUntilInterrupted(t *testing.T) {
 	if err != nil {
 		t.Errorf("watch must end quietly with the context, got %v\n%s", err, out)
 	}
+	for _, want := range []string{
+		"demo | watching active runs, polling PRs every 1m0s; not starting new items (use --pick for that); checking every 5s until interrupted\n",
+		"demo | nothing to do: no active runs; checking again every 5s\n",
+	} {
+		if strings.Count(out, want) != 2 {
+			t.Errorf("each project says what it does and why it waits, once:\nwant %q twice in\n%s", want, out)
+		}
+	}
 	if _, err := executeCtx(t, ctx, a, "watch", t.TempDir()); err == nil || !strings.Contains(err.Error(), "no loop.yaml") {
 		t.Errorf("a folder without a project: %v", err)
 	}

@@ -93,6 +93,20 @@ backlog items whenever capacity is free. Given project folders, it watches
 all of them at once and prefixes output with the project name:
 `loop watch --pick ~/loops/*`.
 
+It says what it does: one line at the start with its mode (poll interval,
+whether it picks and how many items at a time), then a status line
+whenever the situation changes: the runs it works on, PRs waiting for
+their next poll and when that is, runs parked at a gate, and with
+`--pick` why nothing (more) was started (no open items, every item
+running, in progress or blocked, `workflow.concurrency` reached, budget
+reached). When there is nothing to do it says so once, with the interval
+it checks again in, and stays quiet until something changes:
+
+```
+watching active runs, polling PRs every 1m0s; not starting new items (use --pick for that); checking every 5s until interrupted
+nothing to do: 2 PR(s) waiting for their next poll at 14:03:17; checking again every 5s
+```
+
 ## `loop status [-a]`
 
 Active runs with phase, branch, PR and the current note (gate, next poll,

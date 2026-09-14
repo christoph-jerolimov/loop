@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,11 @@ type WatchOptions struct {
 
 // Watch drives active runs until ctx ends or (with ExitWhenIdle) until
 // nothing is left to do.
+//
+// It tells on the terminal what it is doing: one line at the start with
+// the mode it runs in, then a status line whenever what it works on, waits
+// for or cannot pick changes. Identical states are not repeated, so an
+// idle watch stays quiet after saying why it waits.
 func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 	if o.Tick == 0 {
 		o.Tick = 5 * time.Second
@@ -57,12 +63,22 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			}
 		}()
 	}
+	busy := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(driving)
+	}
+	if len(only) == 0 {
+		fmt.Fprintln(e.Out, e.watchIntro(o))
+	}
+	var lastPick, lastStatus string
 	for {
 		runs, err := e.Store.Active()
 		if err != nil {
 			return err
 		}
 		e.resumeFromPR(ctx, only)
+		var tick watchTick
 		active, parked := 0, 0
 		for _, r := range runs {
 			if len(only) > 0 && !only[r.ID] {
@@ -73,41 +89,52 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 				parked++
 				if !e.checkPRCommands(ctx, r) {
 					_ = e.Store.Save(r)
+					tick.parked++
 					continue
 				}
 				_ = e.Store.Save(r)
 			}
-			if !r.NextPoll.IsZero() && time.Now().Before(r.NextPoll) && (r.Phase == state.PhaseMonitor || r.Phase == state.PhaseClose) {
-				continue
+			polls := r.Phase == state.PhaseMonitor || r.Phase == state.PhaseClose
+			if polls {
+				tick.polling++
+				if !r.NextPoll.IsZero() && time.Now().Before(r.NextPoll) {
+					if tick.nextPoll.IsZero() || r.NextPoll.Before(tick.nextPoll) {
+						tick.nextPoll = r.NextPoll
+					}
+					continue
+				}
+			} else {
+				tick.working++
 			}
 			drive(r)
 		}
 		picked := 0
-		if o.PickNew {
-			mu.Lock()
-			busy := len(driving)
-			mu.Unlock()
-			if busy < e.Cfg.Workflow.Concurrency || len(runs) == 0 {
-				n, err := e.pick(ctx, o, runs)
-				if err != nil {
-					fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("pick: %v", err), term.Red))
-				}
-				picked = n
+		if o.PickNew && (busy() < e.Cfg.Workflow.Concurrency || len(runs) == 0) {
+			res, err := e.pick(ctx, o, runs)
+			if err != nil {
+				fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("pick: %v", err), term.Red))
 			}
+			picked = res.started
+			tell(e, &lastPick, res.note(e.Cfg.Workflow.Concurrency), term.Yellow)
 		}
-		if o.ExitWhenIdle && active == parked && picked == 0 {
-			mu.Lock()
-			busy := len(driving)
-			mu.Unlock()
-			if busy == 0 {
-				if !o.PickNew || !e.anythingReady(ctx, o) {
-					wg.Wait()
-					if parked > 0 {
-						fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%d run(s) waiting at a gate; approve with: loop approve <run>", parked), term.Yellow))
-					}
-					return nil
-				}
+		idle := o.ExitWhenIdle && active == parked && picked == 0 && busy() == 0 &&
+			(!o.PickNew || !e.anythingReady(ctx, o))
+		if idle {
+			wg.Wait()
+			switch {
+			case parked > 0:
+				fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%d run(s) waiting at a gate; approve with: loop approve <run>", parked), term.Yellow))
+			case len(only) == 0:
+				fmt.Fprintln(e.Out, e.Paint.Paint("nothing left to do", term.Dim))
 			}
+			return nil
+		}
+		if active > 0 || len(only) == 0 {
+			style := term.Dim
+			if tick.working > 0 {
+				style = term.Cyan
+			}
+			tell(e, &lastStatus, tick.String(o.Tick), style)
 		}
 		select {
 		case <-ctx.Done():
@@ -116,6 +143,79 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 		case <-time.After(o.Tick):
 		}
 	}
+}
+
+// tell prints line in the given styles when it differs from what was last
+// printed through the same slot, so a state that does not change is
+// reported once.
+func tell(e *Engine, last *string, line string, styles ...term.Style) {
+	if line == *last {
+		return
+	}
+	*last = line
+	if line != "" {
+		fmt.Fprintln(e.Out, e.Paint.Paint(line, styles...))
+	}
+}
+
+// watchIntro is the first line of a watch: what it drives, whether it
+// picks, and how often it looks.
+func (e *Engine) watchIntro(o WatchOptions) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "watching active runs, polling PRs every %s", e.Cfg.Workflow.PollInterval.D())
+	if o.PickNew {
+		fmt.Fprintf(&b, "; starting ready items, up to %d at a time (workflow.concurrency)", e.Cfg.Workflow.Concurrency)
+		if o.Source != "" {
+			fmt.Fprintf(&b, ", from source %s", o.Source)
+		}
+	} else {
+		b.WriteString("; not starting new items (use --pick for that)")
+	}
+	if o.ExitWhenIdle {
+		b.WriteString("; returning when nothing is left to do")
+	} else {
+		fmt.Fprintf(&b, "; checking every %s until interrupted", o.Tick)
+	}
+	return b.String()
+}
+
+// watchTick counts what one scheduler tick found.
+type watchTick struct {
+	// working runs are in an agent phase (checkout, session, verify, PR,
+	// fix, merge, cleanup) and produce their own output.
+	working int
+	// polling runs have a PR and wait for or are at their next poll.
+	polling int
+	// nextPoll is the earliest upcoming poll among the polling runs.
+	nextPoll time.Time
+	// parked runs wait at a gate.
+	parked int
+}
+
+// String describes the tick: what loop works on, or why it has nothing to
+// do and how long it waits before it looks again.
+func (t watchTick) String(tick time.Duration) string {
+	var parts []string
+	if t.working > 0 {
+		parts = append(parts, fmt.Sprintf("working on %d run(s)", t.working))
+	}
+	if t.polling > 0 {
+		s := fmt.Sprintf("%d PR(s) waiting for their next poll", t.polling)
+		if !t.nextPoll.IsZero() {
+			s += " at " + t.nextPoll.Format("15:04:05")
+		}
+		parts = append(parts, s)
+	}
+	if t.parked > 0 {
+		parts = append(parts, fmt.Sprintf("%d run(s) waiting at a gate (loop approve <run>)", t.parked))
+	}
+	if t.working > 0 {
+		return strings.Join(parts, "; ")
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "no active runs")
+	}
+	return fmt.Sprintf("nothing to do: %s; checking again every %s", strings.Join(parts, ", "), tick)
 }
 
 // resumeFromPR gives blocked runs that have a PR a chance to be resumed
@@ -135,20 +235,63 @@ func (e *Engine) resumeFromPR(ctx context.Context, only map[string]bool) {
 	}
 }
 
-// pick starts ready items up to the concurrency limit.
-func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) (int, error) {
-	if err := e.checkStartBudget(); err != nil {
-		if !e.budgetNoted {
-			fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%v; not picking new items", err), term.Yellow))
-			e.budgetNoted = true
-		}
-		return 0, nil
+// pickResult says what pick started and why it started nothing (more).
+type pickResult struct {
+	started int
+	// budget is the budget error that stopped picking, if any.
+	budget error
+	// full is set when the concurrency limit was reached with open items
+	// left unlooked at.
+	full bool
+	// open is the number of open items in the sources; the counters below
+	// say why the ones not started were skipped.
+	open, running, inProgress, blocked, unloadable int
+}
+
+// note explains why nothing (more) was picked, "" when there is nothing
+// to explain.
+func (p pickResult) note(concurrency int) string {
+	switch {
+	case p.budget != nil:
+		return fmt.Sprintf("%v; not picking new items", p.budget)
+	case p.full:
+		return fmt.Sprintf("workflow.concurrency (%d) reached; not picking more items", concurrency)
+	case p.started > 0:
+		return ""
+	case p.open == 0:
+		return "nothing to pick: no open items"
+	case p.open == p.running:
+		return "nothing to pick: every open item already has a run"
 	}
-	e.budgetNoted = false
+	var why []string
+	for _, c := range []struct {
+		n    int
+		what string
+	}{
+		{p.running, "already running"},
+		{p.inProgress, "marked in progress"},
+		{p.blocked, "blocked by open dependencies"},
+		{p.unloadable, "could not be loaded"},
+	} {
+		if c.n > 0 {
+			why = append(why, fmt.Sprintf("%d %s", c.n, c.what))
+		}
+	}
+	return fmt.Sprintf("nothing to pick: %d open item(s), %s (see: loop list)", p.open, strings.Join(why, ", "))
+}
+
+// pick starts ready items up to the concurrency limit.
+func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) (pickResult, error) {
+	var res pickResult
+	if err := e.checkStartBudget(); err != nil {
+		res.budget = err
+		return res, nil
+	}
 	items, errs := e.Sources.ListAll(ctx, o.Source)
 	for _, err := range errs {
 		fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("warning: %v", err), term.Yellow))
 	}
+	res.open = len(items)
 	activeItems := map[string]bool{}
 	heavy := 0
 	for _, r := range active {
@@ -157,29 +300,48 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 			heavy++
 		}
 	}
-	started := 0
-	for _, it := range items {
-		if heavy+started >= e.Cfg.Workflow.Concurrency {
+	for i, it := range items {
+		if heavy+res.started >= e.Cfg.Workflow.Concurrency {
+			// Out of capacity: the rest is not looked at, but items that
+			// already run are not the reason nothing more was picked.
+			for _, rest := range items[i:] {
+				if activeItems[rest.ID] {
+					res.running++
+				} else {
+					res.full = true
+				}
+			}
 			break
 		}
 		if activeItems[it.ID] {
+			res.running++
 			continue
 		}
 		full, err := e.Sources.Resolve(ctx, it.ID)
 		if err != nil {
+			res.unloadable++
 			continue
 		}
 		rd := e.Check(ctx, full)
 		if !rd.Ready && !(o.Force && rd.ActiveRun == nil) {
+			switch {
+			case rd.ActiveRun != nil:
+				res.running++
+			case rd.InProgress:
+				res.inProgress++
+			default:
+				res.blocked++
+			}
 			continue
 		}
 		if _, err := e.Start(ctx, full, o.Force); err != nil {
 			fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("skip %s: %v", it.ID, err), term.Red))
+			res.unloadable++
 			continue
 		}
-		started++
+		res.started++
 	}
-	return started, nil
+	return res, nil
 }
 
 func (e *Engine) anythingReady(ctx context.Context, o WatchOptions) bool {
