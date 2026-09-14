@@ -164,7 +164,9 @@ something is missing. See the [command reference](cli.md).
   `workflow.concurrency` at a time in the agent phases, and returns when
   everything is done or parked.
 - `loop watch` is the long-running worker: it drives every active run and,
-  with `--pick`, starts new ones whenever capacity is free.
+  with `--pick`, starts new ones whenever capacity is free. It reports
+  what it works on, what it waits for and why nothing is picked whenever
+  that changes, so an idle watch is not silent about why.
 
 Runs are locked per process (`.loop/runs/<run>/lock`), so several loop
 processes on the same project never drive the same run.
