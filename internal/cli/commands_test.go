@@ -3,6 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -417,5 +420,66 @@ func TestRunDryRunPrintsPlanWithoutStarting(t *testing.T) {
 	out, err = execute(t, p, "run", "--dry-run", "auth.md")
 	if err != nil || !strings.Contains(out, "would start:   yes") {
 		t.Errorf("ready item: %v\n%s", err, out)
+	}
+}
+
+// fakeGitLab serves what loop doctor and loop list ask a GitLab project.
+func fakeGitLab(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		write := func(v any) { _ = json.NewEncoder(w).Encode(v) }
+		switch p := r.URL.EscapedPath(); {
+		case p == "/api/v4/user":
+			write(map[string]any{"id": 9, "username": "me"})
+		case p == "/api/v4/projects/g%2Fr":
+			write(map[string]any{"id": 5, "path_with_namespace": "g/r", "default_branch": "main", "visibility": "private", "permissions": map[string]any{"project_access": map[string]any{"access_level": 40}}})
+		case p == "/api/v4/projects/g%2Fr/issues", p == "/api/v4/projects/g%2Fr/issues/3":
+			is := map[string]any{"id": 100, "iid": 3, "title": "Fix typo", "description": "In the README.", "state": "opened", "web_url": "https://gitlab.com/g/r/-/issues/3", "labels": []string{"ready"}, "created_at": "2026-02-01T00:00:00Z", "author": map[string]any{"id": 1, "username": "ann"}}
+			if strings.HasSuffix(p, "/3") {
+				write(is)
+			} else {
+				write([]any{is})
+			}
+		case p == "/api/v4/projects/g%2Fr/issues/3/notes":
+			write([]any{})
+		default:
+			t.Logf("unexpected GitLab request %s %s", r.Method, p)
+			w.WriteHeader(404)
+			write(map[string]any{"message": "404 Not Found"})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GITLAB_TOKEN", "glpat")
+	return srv
+}
+
+func TestDoctorAndListWithGitLab(t *testing.T) {
+	p := newProject(t)
+	srv := fakeGitLab(t)
+	yaml := strings.Replace(p.yaml, "  github: o/r\n", "  gitlab: g/r\n  gitlab_url: "+srv.URL+"\n", 1)
+	yaml = strings.Replace(yaml, "  - name: gh\n    type: github\n    labels: [ready]\n", "  - name: gl\n    type: gitlab\n    labels: [ready]\n", 1)
+	p.writeYAML(t, yaml)
+	out, err := execute(t, p, "doctor")
+	if err != nil {
+		t.Fatalf("doctor: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"gitlab: me can push to g/r",
+		"source gl (gitlab): 1 open item(s)",
+		"ticket comments loaded from members with developer access or more",
+		"all checks passed (0 warning(s))",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("doctor output lacks %q:\n%s", want, out)
+		}
+	}
+	out, err = execute(t, p, "list")
+	if err != nil || !strings.Contains(out, "gl:3") || !strings.Contains(out, "Fix typo") {
+		t.Errorf("list: %v\n%s", err, out)
+	}
+	out, err = execute(t, p, "run", "--dry-run", "gl:3")
+	if err != nil || !strings.Contains(out, "would start:   yes") || !strings.Contains(out, "pr title:      Fix typo") {
+		t.Errorf("dry run of a GitLab issue: %v\n%s", err, out)
 	}
 }

@@ -7,8 +7,8 @@ keep that contained and what remains your decision.
 ## What the agent can and cannot do
 
 - **Credentials.** Sessions run with an allowlisted environment. Toolchain
-  and agent variables pass through; loop's own `GITHUB_TOKEN`, `GH_TOKEN`
-  and `JIRA_*` do not, so the agent cannot push, merge, or comment with
+  and agent variables pass through; loop's own `GITHUB_TOKEN`, `GH_TOKEN`,
+  `GITLAB_TOKEN` and `JIRA_*` do not, so the agent cannot push, merge, or comment with
   loop's identity. Anything else a project needs is named explicitly in
   `agent.env_passthrough` (see the [configuration
   reference](configuration.md#environment-of-a-session)).
@@ -46,13 +46,16 @@ What limits the damage:
 
 What you decide:
 
-- **Who can write tickets.** On a public GitHub repository anyone can
-  comment on an issue. loop therefore loads, by default, only comments
-  written by the repository owner or by collaborators with write access
-  (`comments: writers`). The author's association on the comment settles
-  the clear cases; for organisation members and collaborators loop looks
-  up their permission on the repository, which needs push access for
-  loop's own token. Without it only the owner's comments are loaded. Set
+- **Who can write tickets.** On a public GitHub or GitLab repository
+  anyone can comment on an issue. loop therefore loads, by default, only
+  comments written by the repository owner or by collaborators with write
+  access (`comments: writers`). On GitHub the author's association on the
+  comment settles the clear cases; for organisation members and
+  collaborators loop looks up their permission on the repository, which
+  needs push access for loop's own token. Without it only the owner's
+  comments are loaded. On GitLab loop looks up each author's membership
+  (direct or inherited) and keeps developers and above; the lookup needs
+  loop's token to be a member itself. Set
   `comments: all` to load every comment, or `comments: none` for none.
   Markdown backlogs are in your own repository and Jira is behind your own
   accounts, so their comments are loaded by default. `loop doctor` reports

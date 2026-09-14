@@ -70,6 +70,11 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("github: HTTP %d: %s", e.Status, e.Body) }
 
+// HTTPStatus and ResponseBody let callers inspect the error without
+// importing this package.
+func (e *Error) HTTPStatus() int      { return e.Status }
+func (e *Error) ResponseBody() string { return e.Body }
+
 func (c *Client) policy() httpx.Policy {
 	if c.Retry.Attempts == 0 {
 		return httpx.Default
@@ -716,23 +721,4 @@ func (c CheckRun) JobID() int64 {
 		}
 	}
 	return 0
-}
-
-var (
-	ansiRe      = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-	timestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?`)
-)
-
-// TailLog returns the last n lines of an Actions log with the leading
-// timestamps and ANSI colour codes removed.
-func TailLog(log string, n int) string {
-	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
-	if n > 0 && len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	for i, l := range lines {
-		l = timestampRe.ReplaceAllString(l, "")
-		lines[i] = strings.TrimRight(ansiRe.ReplaceAllString(l, ""), " \r")
-	}
-	return strings.Join(lines, "\n")
 }

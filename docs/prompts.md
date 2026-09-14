@@ -23,7 +23,7 @@ prints the rendered session prompt for an item.
 | `.Plan` | the approved plan's text, empty without `workflow.plan` | session |
 | `.Diff`, `.FindingsFile` | the branch's diff against the base (cut at 200 KiB) and where to write findings | self-review |
 | `.PRComments` | `.Author`, `.Body`, `.Created`, `.URL` | review |
-| `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text`, `.Log` (tail of the Actions job log, see `workflow.ci_log_lines`) | ci |
+| `.Checks` | `.Name`, `.Conclusion`, `.URL`, `.Summary`, `.Text`, `.Log` (tail of the CI job log, see `workflow.ci_log_lines`) | ci |
 | `.Conflicts` | list of file paths | conflict |
 | `.VerifyStep`, `.VerifyOutput` | string | verify |
 | `.Summary` | contents of the summary file | pr body |

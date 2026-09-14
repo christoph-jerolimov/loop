@@ -34,20 +34,21 @@ order:
    inline thread with what the session did and resolves the threads the
    session reported as done (see [prompts](prompts.md#answering-reviewers)).
 5. **Red CI** on the current head → first, with `workflow.ci_rerun: true`
-   (the default), the failed GitHub Actions jobs are re-run once for this
-   head and loop looks again on the next poll, so a flaky job does not
-   cost an agent session. Still red → `fix` with the `ci` template, once per
-   head commit. For checks that are GitHub Actions jobs, the last
-   `workflow.ci_log_lines` lines of the job log are part of the prompt, with
-   timestamps and colour codes stripped.
+   (the default), the failed GitHub Actions jobs are re-run (the GitLab
+   pipeline is retried) once for this head and loop looks again on the
+   next poll, so a flaky job does not cost an agent session. Still red →
+   `fix` with the `ci` template, once per head commit. For checks that are
+   CI jobs, the last `workflow.ci_log_lines` lines of the job log are part
+   of the prompt, with timestamps and colour codes stripped.
 6. **Pending CI** → wait.
 7. **Green**: a draft PR is marked ready for review. Then, by policy:
    - `manual`: keep watching until a human merges.
    - `when-green`: merge now.
    - `when-green-and-approved`: merge when the latest review of every
      reviewer is an approval and at least one exists.
-   - `github-auto-merge`: auto-merge was enabled on the PR when it was
-     opened; GitHub merges when its rules pass. loop keeps watching.
+   - `auto-merge`: the host's auto-merge was enabled on the PR when it was
+     opened (GitHub's auto-merge, GitLab's merge when pipeline succeeds);
+     the host merges when its rules pass. loop keeps watching.
 
 Each `fix` round runs `steps.verify` before it pushes, so a fix can never
 push what the initial round would have rejected; a failing verify step
@@ -60,7 +61,7 @@ Before merging, loop reads the PR's `mergeable_state`. When branch
 protection holds a green PR (`blocked`: required reviewers loop cannot
 satisfy, a required check that never reports, or a "branches must be up to
 date" rule), the run parks as `blocked` with one note on the PR instead of
-retrying every poll. A merge GitHub rejects for another reason is retried
+retrying every poll. A merge the host rejects for another reason is retried
 up to three times, then the run parks the same way. After a human resolves
 the cause, `loop resume <run>` continues to the merge.
 
@@ -81,8 +82,8 @@ implementation session as `.Plan`, so the session follows what was
 approved.
 
 Add `before-code` to `workflow.gates` to make the run wait for a human
-after the plan. `loop approve <run>` continues it; for GitHub issues of
-the repository a `/loop approve` comment on the issue by a collaborator
+after the plan. `loop approve <run>` continues it; for GitHub or GitLab
+issues of the repository a `/loop approve` comment on the issue by a collaborator
 with push access does the same. Anything the plan session leaves in the
 worktree is discarded before the implementation starts. The gate works
 without the plan too: it then simply holds the run before the session.
@@ -114,7 +115,7 @@ it too unless you make `loop` a required status on purpose.
 
 ## API errors and rate limits
 
-Every GitHub and Jira call retries network errors, 5xx responses and
+Every GitHub, GitLab and Jira call retries network errors, 5xx responses and
 rate-limit responses (429, or 403 with the rate limit exhausted) up to four
 times with exponential backoff and jitter, honouring `Retry-After` and
 `X-RateLimit-Reset`. A rate limit that asks for more than two minutes is
@@ -129,8 +130,8 @@ long outage neither hammers the API nor stops the run.
 
 - `before-code`: after setup and the optional plan, before the
   implementation session. There is no PR yet, so the note goes on the
-  ticket; for a GitHub issue of the repository, `/loop approve` works as a
-  comment on the issue.
+  ticket; for a GitHub or GitLab issue of the repository, `/loop approve`
+  works as a comment on the issue.
 - `before-pr`: after verify, before pushing and opening the PR.
 - `before-fix`: before every fix round.
 - `before-merge`: before loop merges (only meaningful for the merge
@@ -172,9 +173,9 @@ processes on the same project never drive the same run.
 
 Without push access to a repository, set `repo.fork` to a fork you can
 push to. loop clones and reads from `repo.url`, pushes every branch to the
-fork (`push_url`), opens pull requests from `forkowner:branch` against the
-base branch of the original repository, and deletes the branch on the fork
-after the merge. Merge policies other than `manual` need push access to
+fork (`push_url`), opens pull requests (merge requests on GitLab) from the
+fork against the base branch of the original repository, and deletes the
+branch on the fork after the merge. Merge policies other than `manual` need push access to
 the original repository; `loop doctor` warns when that is missing.
 
 ```yaml

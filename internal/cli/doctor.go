@@ -12,13 +12,12 @@ import (
 
 	"github.com/christoph-jerolimov/loop/internal/agent"
 	"github.com/christoph-jerolimov/loop/internal/config"
-	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
+	"github.com/christoph-jerolimov/loop/internal/host"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/jiraapi"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 	"github.com/christoph-jerolimov/loop/internal/source"
-	"github.com/christoph-jerolimov/loop/internal/source/github"
 )
 
 var doctorCmd = &cobra.Command{
@@ -26,7 +25,7 @@ var doctorCmd = &cobra.Command{
 	Short: "Check the project configuration, tools, credentials and sources",
 	Long: `Runs every check a run depends on before any worktree is created: loop.yaml
 is valid and its referenced files exist, git and the agent CLI are on the
-PATH, the repository and base branch are reachable, the GitHub token works
+PATH, the repository and base branch are reachable, the GitHub or GitLab token works
 and can push, Jira credentials work, and every source can be listed.
 
 Exits non-zero when a check fails.`,
@@ -85,11 +84,11 @@ func (d *doctor) run() {
 	d.checkRepo(cfg)
 
 	fmt.Println("Credentials")
-	gh := d.checkGitHub(cfg)
+	h := d.checkHost(cfg)
 	d.checkJira(cfg)
 
 	fmt.Println("Sources")
-	d.checkSources(cfg, gh)
+	d.checkSources(cfg, h)
 
 	fmt.Println("State")
 	if err := os.MkdirAll(cfg.StatePath(), 0o755); err != nil {
@@ -197,47 +196,48 @@ func (d *doctor) checkRepo(cfg *config.Config) {
 	}
 }
 
-func (d *doctor) checkGitHub(cfg *config.Config) *ghapi.Client {
-	gh, err := ghapi.New(cfg.Repo.GitHub)
+func (d *doctor) checkHost(cfg *config.Config) host.Host {
+	name := cfg.Repo.Host()
+	h, err := host.New(cfg.Repo)
 	if err != nil {
-		d.fail("github: %v", err)
+		d.fail("%s: %v", name, err)
 		return nil
 	}
-	login, err := gh.Viewer(d.ctx)
+	login, err := h.Viewer(d.ctx)
 	if err != nil {
-		d.fail("github token rejected: %v", firstLine(err.Error()))
+		d.fail("%s token rejected: %v", name, firstLine(err.Error()))
 		return nil
 	}
-	repo, err := gh.GetRepository(d.ctx)
+	repo, err := h.GetRepository(d.ctx)
 	if err != nil {
-		d.fail("github: cannot read %s as %s: %v", cfg.Repo.GitHub, login, firstLine(err.Error()))
+		d.fail("%s: cannot read %s as %s: %v", name, cfg.Repo.Project(), login, firstLine(err.Error()))
 		return nil
 	}
 	switch {
 	case cfg.Repo.Fork != "":
-		d.ok("github: %s can read %s", login, repo.FullName)
-		fork, ferr := ghapi.New(cfg.Repo.Fork)
+		d.ok("%s: %s can read %s", name, login, repo.FullName)
+		fork, ferr := host.NewProject(cfg.Repo, cfg.Repo.Fork)
 		if ferr == nil {
 			if fr, rerr := fork.GetRepository(d.ctx); rerr != nil {
-				d.fail("github: cannot read fork %s: %v", cfg.Repo.Fork, firstLine(rerr.Error()))
-			} else if !fr.Permissions.Push {
-				d.fail("github: %s has no push access to fork %s", login, fr.FullName)
+				d.fail("%s: cannot read fork %s: %v", name, cfg.Repo.Fork, firstLine(rerr.Error()))
+			} else if !fr.CanPush {
+				d.fail("%s: %s has no push access to fork %s", name, login, fr.FullName)
 			} else {
-				d.ok("github: %s can push to fork %s; pull requests open from there against %s", login, fr.FullName, repo.FullName)
+				d.ok("%s: %s can push to fork %s; pull requests open from there against %s", name, login, fr.FullName, repo.FullName)
 			}
 		}
-		if !repo.Permissions.Push {
-			d.warn("github: no push access to %s, so merge policies other than manual cannot merge", repo.FullName)
+		if !repo.CanPush {
+			d.warn("%s: no push access to %s, so merge policies other than manual cannot merge", name, repo.FullName)
 		}
-	case !repo.Permissions.Push:
-		d.fail("github: %s has no push access to %s (needed to push branches and merge); set repo.fork to contribute through a fork", login, repo.FullName)
+	case !repo.CanPush:
+		d.fail("%s: %s has no push access to %s (needed to push branches and merge); set repo.fork to contribute through a fork", name, login, repo.FullName)
 	default:
-		d.ok("github: %s can push to %s", login, repo.FullName)
+		d.ok("%s: %s can push to %s", name, login, repo.FullName)
 	}
 	if repo.DefaultBranch != cfg.Repo.Base {
-		d.warn("github: default branch is %s, loop.yaml uses base %s", repo.DefaultBranch, cfg.Repo.Base)
+		d.warn("%s: default branch is %s, loop.yaml uses base %s", name, repo.DefaultBranch, cfg.Repo.Base)
 	}
-	return gh
+	return h
 }
 
 func (d *doctor) checkJira(cfg *config.Config) {
@@ -261,15 +261,15 @@ func (d *doctor) checkJira(cfg *config.Config) {
 	}
 }
 
-func (d *doctor) checkSources(cfg *config.Config, gh *ghapi.Client) {
+func (d *doctor) checkSources(cfg *config.Config, h host.Host) {
 	srcs, err := source.Build(cfg)
 	if err != nil {
 		d.fail("%v", err)
 		return
 	}
 	for _, s := range srcs {
-		if s.Type() == "github" && gh == nil {
-			d.fail("source %s: skipped, GitHub credentials failed", s.Name())
+		if s.Type() == cfg.Repo.Host() && h == nil {
+			d.fail("source %s: skipped, %s credentials failed", s.Name(), s.Type())
 			continue
 		}
 		items, err := s.List(d.ctx)
@@ -278,7 +278,7 @@ func (d *doctor) checkSources(cfg *config.Config, gh *ghapi.Client) {
 			continue
 		}
 		d.ok("source %s (%s): %d open item(s)", s.Name(), s.Type(), len(items))
-		if g, ok := s.(*github.Source); ok {
+		if g, ok := s.(interface{ CommentsReason(context.Context) string }); ok {
 			d.ok("source %s: ticket comments %s", s.Name(), g.CommentsReason(d.ctx))
 		}
 	}

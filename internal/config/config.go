@@ -44,14 +44,44 @@ type Repo struct {
 	Base         string `yaml:"base"`
 	Workdir      string `yaml:"workdir"` // worktree | clone
 	BranchPrefix string `yaml:"branch_prefix"`
-	// GitHub is "owner/name". Derived from URL when empty.
+	// GitHub is "owner/name". Derived from URL when it is a github.com URL.
 	GitHub string `yaml:"github"`
-	// Fork is "owner/name" of a fork to push branches to when you have no
-	// push access to the repository. Pull requests are then opened from the
-	// fork against repo.github.
+	// GitLab is the project path ("group/subgroup/project"). Derived from
+	// URL when its host is gitlab.com. Exactly one of GitHub and GitLab is
+	// set; it decides where pull (merge) requests are opened.
+	GitLab string `yaml:"gitlab"`
+	// GitLabURL is the GitLab instance, https://gitlab.com by default or
+	// the host of URL.
+	GitLabURL string `yaml:"gitlab_url"`
+	// Fork is the project ("owner/name") to push branches to when you have
+	// no push access to the repository. Pull requests are then opened from
+	// the fork against the repository.
 	Fork string `yaml:"fork"`
 	// PushURL is the git URL of the fork. Derived from URL and Fork when empty.
 	PushURL string `yaml:"push_url"`
+}
+
+// Code hosts.
+const (
+	HostGitHub = "github"
+	HostGitLab = "gitlab"
+)
+
+// Host is the code host of the repository: github or gitlab.
+func (r Repo) Host() string {
+	if r.GitLab != "" {
+		return HostGitLab
+	}
+	return HostGitHub
+}
+
+// Project is the repository's path on its host: "owner/name" on GitHub,
+// the project path on GitLab.
+func (r Repo) Project() string {
+	if r.GitLab != "" {
+		return r.GitLab
+	}
+	return r.GitHub
 }
 
 // ForkOwner returns the owner part of Fork.
@@ -60,28 +90,19 @@ func (r Repo) ForkOwner() string {
 	return owner
 }
 
-// PushRepo is the GitHub repository branches are pushed to: the fork when
+// PushRepo is the project branches are pushed to: the fork when
 // configured, otherwise the repository itself.
 func (r Repo) PushRepo() string {
 	if r.Fork != "" {
 		return r.Fork
 	}
-	return r.GitHub
+	return r.Project()
 }
 
-// HeadRef is the PR head reference GitHub expects: "owner:branch" from a
-// fork, the bare branch name otherwise.
-func (r Repo) HeadRef(branch string) string {
-	if r.Fork != "" {
-		return r.ForkOwner() + ":" + branch
-	}
-	return branch
-}
-
-// deriveForkURL rewrites a github.com clone URL to point at the fork.
+// deriveForkURL rewrites a clone URL to point at the fork.
 func deriveForkURL(url, fork string) string {
-	if m := githubURLRe.FindStringSubmatch(url); m != nil {
-		return strings.Replace(url, m[1]+"/"+m[2], fork, 1)
+	if m := cloneURLRe.FindStringSubmatch(url); m != nil {
+		return m[1] + fork + m[3]
 	}
 	return ""
 }
@@ -90,15 +111,15 @@ func deriveForkURL(url, fork string) string {
 // the type are ignored.
 type SourceConfig struct {
 	Name string `yaml:"name"`
-	Type string `yaml:"type"` // markdown | github | jira
+	Type string `yaml:"type"` // markdown | github | gitlab | jira
 
 	// markdown
 	Path string `yaml:"path"`
 
-	// github
-	Repo string `yaml:"repo"` // owner/name, defaults to repo.github
+	// github and gitlab
+	Repo string `yaml:"repo"` // owner/name or group/project, defaults to the repository
 
-	// jira
+	// jira (site) and gitlab (instance, defaults to repo.gitlab_url)
 	URL string `yaml:"url"`
 	JQL string `yaml:"jql"`
 	// Transitions maps loop states to Jira transition names.
@@ -109,9 +130,9 @@ type SourceConfig struct {
 	Claim      bool     `yaml:"claim"`
 	ClaimLabel string   `yaml:"claim_label"`
 	// Comments says whose ticket comments are loaded into the prompt data.
-	// Unset means all for markdown and Jira and writers for GitHub: only
-	// comments by the repository owner and by collaborators with write
-	// access, because anyone can comment on a public repository and
+	// Unset means all for markdown and Jira and writers for GitHub and
+	// GitLab: only comments by the repository owner and by members with
+	// write access, because anyone can comment on a public repository and
 	// comments reach the agent verbatim.
 	Comments CommentsPolicy `yaml:"comments"`
 }
@@ -283,7 +304,7 @@ type Workflow struct {
 	PollInterval      Duration `yaml:"poll_interval"`
 	FixRounds         int      `yaml:"fix_rounds"`
 	ConflictAttempts  int      `yaml:"conflict_attempts"`
-	Merge             string   `yaml:"merge"` // manual | when-green | when-green-and-approved | github-auto-merge
+	Merge             string   `yaml:"merge"` // manual | when-green | when-green-and-approved | auto-merge
 	MergeMethod       string   `yaml:"merge_method"`
 	DeleteBranch      *bool    `yaml:"delete_branch"`
 	CloseIssueOnMerge *bool    `yaml:"close_issue_on_merge"`
@@ -384,7 +405,7 @@ const (
 	MergeManual           = "manual"
 	MergeWhenGreen        = "when-green"
 	MergeWhenGreenApprove = "when-green-and-approved"
-	MergeGitHubAuto       = "github-auto-merge"
+	MergeAuto             = "auto-merge"
 )
 
 // Gate names.
@@ -443,7 +464,24 @@ func Find(dir string) (string, error) {
 	}
 }
 
-var githubURLRe = regexp.MustCompile(`(?:github\.com[:/])([^/]+)/([^/]+?)(?:\.git)?/?$`)
+var (
+	githubURLRe = regexp.MustCompile(`(?:github\.com[:/])([^/]+)/([^/]+?)(?:\.git)?/?$`)
+	// cloneURLRe splits a clone URL into scheme and host, project path
+	// and the optional .git suffix: https://host/, git@host: or
+	// ssh://git@host/ followed by group/project.
+	cloneURLRe = regexp.MustCompile(`^((?:https?://|ssh://)[^/]+/|[^@/]+@[^:/]+:)(.+?)(\.git)?/?$`)
+)
+
+// hostOf returns the host name of a clone URL, "" when it is not one.
+func hostOf(url string) string {
+	m := cloneURLRe.FindStringSubmatch(url)
+	if m == nil {
+		return ""
+	}
+	h := strings.TrimSuffix(m[1], "/")
+	h = h[strings.LastIndexAny(h, "/@")+1:]
+	return strings.TrimSuffix(h, ":")
+}
 
 // ApplyDefaults fills in every optional value.
 func (c *Config) ApplyDefaults() {
@@ -459,11 +497,20 @@ func (c *Config) ApplyDefaults() {
 	if c.Repo.BranchPrefix == "" {
 		c.Repo.BranchPrefix = "loop/"
 	}
-	if c.Repo.GitHub == "" {
+	if c.Repo.GitHub == "" && c.Repo.GitLab == "" {
 		if m := githubURLRe.FindStringSubmatch(c.Repo.URL); m != nil {
 			c.Repo.GitHub = m[1] + "/" + m[2]
+		} else if h := hostOf(c.Repo.URL); strings.Contains(h, "gitlab") {
+			c.Repo.GitLab = cloneURLRe.FindStringSubmatch(c.Repo.URL)[2]
 		}
 	}
+	if c.Repo.GitLab != "" && c.Repo.GitLabURL == "" {
+		c.Repo.GitLabURL = "https://gitlab.com"
+		if h := hostOf(c.Repo.URL); h != "" && h != "github.com" {
+			c.Repo.GitLabURL = "https://" + h
+		}
+	}
+	c.Repo.GitLabURL = strings.TrimRight(c.Repo.GitLabURL, "/")
 	if c.Repo.Fork != "" && c.Repo.PushURL == "" {
 		c.Repo.PushURL = deriveForkURL(c.Repo.URL, c.Repo.Fork)
 	}
@@ -474,6 +521,15 @@ func (c *Config) ApplyDefaults() {
 		}
 		if s.Type == "github" && s.Repo == "" {
 			s.Repo = c.Repo.GitHub
+		}
+		if s.Type == "gitlab" {
+			if s.Repo == "" {
+				s.Repo = c.Repo.GitLab
+			}
+			if s.URL == "" {
+				s.URL = c.Repo.GitLabURL
+			}
+			s.URL = strings.TrimRight(s.URL, "/")
 		}
 		if s.Type == "markdown" && s.Path == "" {
 			s.Path = "backlog"
@@ -488,7 +544,7 @@ func (c *Config) ApplyDefaults() {
 			s.ClaimLabel = "loop:in-progress"
 		}
 		if s.Comments == "" {
-			if s.Type == "github" {
+			if s.Type == "github" || s.Type == "gitlab" {
 				s.Comments = CommentsWriters
 			} else {
 				s.Comments = CommentsAll
@@ -603,14 +659,21 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("duplicate source name %q", s.Name))
 		}
 		seen[s.Name] = true
-		if s.Comments == CommentsWriters && s.Type != "github" {
-			errs = append(errs, fmt.Errorf("source %s: comments: writers is only supported by github sources", s.Name))
+		if s.Comments == CommentsWriters && s.Type != "github" && s.Type != "gitlab" {
+			errs = append(errs, fmt.Errorf("source %s: comments: writers is only supported by github and gitlab sources", s.Name))
 		}
 		switch s.Type {
 		case "markdown":
 		case "github":
 			if s.Repo == "" {
 				errs = append(errs, fmt.Errorf("source %s: repo is required (owner/name)", s.Name))
+			}
+		case "gitlab":
+			if s.Repo == "" {
+				errs = append(errs, fmt.Errorf("source %s: repo is required (group/project)", s.Name))
+			}
+			if s.URL == "" {
+				errs = append(errs, fmt.Errorf("source %s: url is required (the GitLab instance)", s.Name))
 			}
 		case "jira":
 			if s.URL == "" {
@@ -637,9 +700,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	switch c.Workflow.Merge {
-	case MergeManual, MergeWhenGreen, MergeWhenGreenApprove, MergeGitHubAuto:
+	case MergeManual, MergeWhenGreen, MergeWhenGreenApprove, MergeAuto:
 	default:
-		errs = append(errs, fmt.Errorf("workflow.merge must be one of manual, when-green, when-green-and-approved, github-auto-merge; got %q", c.Workflow.Merge))
+		errs = append(errs, fmt.Errorf("workflow.merge must be one of manual, when-green, when-green-and-approved, auto-merge; got %q", c.Workflow.Merge))
 	}
 	switch c.Workflow.MergeMethod {
 	case "squash", "merge", "rebase":
@@ -674,15 +737,18 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
-	if c.Repo.GitHub == "" {
-		errs = append(errs, errors.New("repo.github (owner/name) could not be derived from repo.url; set it explicitly"))
+	switch {
+	case c.Repo.GitHub != "" && c.Repo.GitLab != "":
+		errs = append(errs, errors.New("repo.github and repo.gitlab are mutually exclusive"))
+	case c.Repo.GitHub == "" && c.Repo.GitLab == "":
+		errs = append(errs, errors.New("neither repo.github (owner/name) nor repo.gitlab (group/project) could be derived from repo.url; set one explicitly"))
 	}
 	if c.Repo.Fork != "" {
 		if !strings.Contains(c.Repo.Fork, "/") {
 			errs = append(errs, fmt.Errorf("repo.fork must be owner/name, got %q", c.Repo.Fork))
 		}
 		if c.Repo.PushURL == "" {
-			errs = append(errs, errors.New("repo.push_url is required with repo.fork when repo.url is not a github.com URL"))
+			errs = append(errs, errors.New("repo.push_url is required with repo.fork when repo.url is not a clone URL loop can rewrite"))
 		}
 	}
 	return errors.Join(errs...)
