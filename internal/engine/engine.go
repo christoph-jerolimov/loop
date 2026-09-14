@@ -40,8 +40,6 @@ type Engine struct {
 	hostOnce sync.Once
 	hostErr  error
 	self     string
-	// budgetNoted keeps the "not picking" line to once per budget stop.
-	budgetNoted bool
 
 	heavy chan struct{}
 }

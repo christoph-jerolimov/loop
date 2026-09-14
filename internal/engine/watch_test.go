@@ -113,6 +113,146 @@ func TestWatchReportsRunsParkedAtGates(t *testing.T) {
 	}
 }
 
+func TestWatchTellsWhatItDoesAndWhenItIsDone(t *testing.T) {
+	lc := newLifecycleWith(t, manualMerge)
+	if err := lc.eng.Watch(context.Background(), WatchOptions{ExitWhenIdle: true, Tick: time.Millisecond}); err != nil {
+		t.Fatalf("watch: %v\n%s", err, lc.out.String())
+	}
+	out := lc.out.String()
+	for _, want := range []string{
+		"watching active runs, polling PRs every 1ms; not starting new items (use --pick for that); returning when nothing is left to do\n",
+		"working on 1 run(s)\n",
+		"nothing left to do\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("watch output lacks %q:\n%s", want, out)
+		}
+	}
+	if !strings.HasSuffix(out, "nothing left to do\n") {
+		t.Errorf("the last line says why the watch returned:\n%s", out)
+	}
+}
+
+func TestWatchExplainsWhyItWaitsOnlyOnce(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		manualMerge(cfg, lc)
+		cfg.Workflow.Gates = []string{config.GateBeforePR}
+	})
+	lc.drive(t, state.PhaseVerify) // parks at the gate
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_ = lc.eng.Watch(ctx, WatchOptions{Tick: time.Millisecond})
+	out := lc.out.String()
+	if !strings.Contains(out, "; checking every 1ms until interrupted\n") {
+		t.Errorf("a watch without ExitWhenIdle says it keeps checking:\n%s", out)
+	}
+	idle := "nothing to do: 1 run(s) waiting at a gate (loop approve <run>); checking again every 1ms\n"
+	if n := strings.Count(out, idle); n != 1 {
+		t.Errorf("the idle line must be printed once, not on every tick: got %d\n%s", n, out)
+	}
+}
+
+func TestWatchReportsPRsWaitingForTheirNextPoll(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		cfg.Workflow.Merge = config.MergeManual
+		cfg.Workflow.PollInterval = config.Duration(time.Hour)
+	})
+	lc.drive(t, state.PhaseMonitor) // opens the PR and schedules the next poll in an hour
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_ = lc.eng.Watch(ctx, WatchOptions{Only: []string{lc.run.ID}, Tick: time.Millisecond})
+	out := lc.out.String()
+	want := "nothing to do: 1 PR(s) waiting for their next poll at " + lc.run.NextPoll.Format("15:04:05") + "; checking again every 1ms\n"
+	if n := strings.Count(out, want); n != 1 {
+		t.Errorf("want %q once, got %d:\n%s", want, n, out)
+	}
+	if strings.Contains(out, "watching active runs") {
+		t.Errorf("driving one run (loop run) has no watch intro:\n%s", out)
+	}
+}
+
+func TestWatchExplainsWhyNothingIsPicked(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		manualMerge(cfg, lc)
+		// Long enough for the scheduler to look at the backlog while auth
+		// still waits for its first poll, so it is counted as running.
+		cfg.Workflow.PollInterval = config.Duration(50 * time.Millisecond)
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "later.md"), []byte("---\ntitle: Later\n---\nDepends on: missing.md\n"), 0o644)
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "claimed.md"), []byte("---\ntitle: Claimed\nstatus: in-progress\n---\nSomeone is on it.\n"), 0o644)
+	})
+	if err := lc.eng.Watch(context.Background(), WatchOptions{PickNew: true, ExitWhenIdle: true, Tick: time.Millisecond}); err != nil {
+		t.Fatalf("watch: %v\n%s", err, lc.out.String())
+	}
+	out := lc.out.String()
+	for _, want := range []string{
+		"; starting ready items, up to 1 at a time (workflow.concurrency); returning when nothing is left to do\n",
+		"nothing to pick: 3 open item(s), 1 already running, 1 marked in progress, 1 blocked by open dependencies (see: loop list)\n",
+		"nothing to pick: 2 open item(s), 1 marked in progress, 1 blocked by open dependencies (see: loop list)\n",
+		"nothing left to do\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("watch output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestWatchTellsWhenConcurrencyIsReached(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		manualMerge(cfg, lc)
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "search.md"), []byte("---\ntitle: Add search\n---\nIndex things.\n"), 0o644)
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "export.md"), []byte("---\ntitle: Add export\n---\nExport things.\n"), 0o644)
+	})
+	if err := lc.eng.Watch(context.Background(), WatchOptions{PickNew: true, ExitWhenIdle: true, Tick: time.Millisecond}); err != nil {
+		t.Fatalf("watch: %v\n%s", err, lc.out.String())
+	}
+	out := lc.out.String()
+	if !strings.Contains(out, "workflow.concurrency (1) reached; not picking more items\n") {
+		t.Errorf("picking one of two ready items must say why the other waits:\n%s", out)
+	}
+	runs, _ := lc.eng.Store.List()
+	if len(runs) != 3 {
+		t.Errorf("all three items are run eventually, got %d runs", len(runs))
+	}
+}
+
+func TestPickResultNote(t *testing.T) {
+	cases := []struct {
+		res  pickResult
+		want string
+	}{
+		{pickResult{budget: &BudgetError{"daily run budget reached (2 of 2 today)"}}, "budget: daily run budget reached (2 of 2 today); not picking new items"},
+		{pickResult{started: 1, full: true}, "workflow.concurrency (2) reached; not picking more items"},
+		{pickResult{started: 1, open: 3}, ""},
+		{pickResult{}, "nothing to pick: no open items"},
+		{pickResult{open: 2, running: 2}, "nothing to pick: every open item already has a run"},
+		{pickResult{open: 3, running: 1, unloadable: 2}, "nothing to pick: 3 open item(s), 1 already running, 2 could not be loaded (see: loop list)"},
+	}
+	for _, c := range cases {
+		if got := c.res.note(2); got != c.want {
+			t.Errorf("%+v: got %q, want %q", c.res, got, c.want)
+		}
+	}
+}
+
+func TestWatchTickString(t *testing.T) {
+	next := time.Date(2026, 9, 14, 12, 30, 5, 0, time.Local)
+	cases := []struct {
+		tick watchTick
+		want string
+	}{
+		{watchTick{}, "nothing to do: no active runs; checking again every 5s"},
+		{watchTick{polling: 2, nextPoll: next}, "nothing to do: 2 PR(s) waiting for their next poll at 12:30:05; checking again every 5s"},
+		{watchTick{polling: 1}, "nothing to do: 1 PR(s) waiting for their next poll; checking again every 5s"},
+		{watchTick{parked: 1, polling: 1, nextPoll: next}, "nothing to do: 1 PR(s) waiting for their next poll at 12:30:05, 1 run(s) waiting at a gate (loop approve <run>); checking again every 5s"},
+		{watchTick{working: 2, polling: 1, nextPoll: next, parked: 1}, "working on 2 run(s); 1 PR(s) waiting for their next poll at 12:30:05; 1 run(s) waiting at a gate (loop approve <run>)"},
+	}
+	for _, c := range cases {
+		if got := c.tick.String(5 * time.Second); got != c.want {
+			t.Errorf("%+v:\n got %q\nwant %q", c.tick, got, c.want)
+		}
+	}
+}
+
 func TestWatchStopsWhenContextEnds(t *testing.T) {
 	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
 		manualMerge(cfg, lc)
