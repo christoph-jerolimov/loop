@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 // Options configures one headless session.
@@ -38,8 +40,11 @@ type Options struct {
 	EnvPassthrough []string
 	// Log receives the raw agent output (stream-json lines).
 	Log io.Writer
-	// Progress receives short human-readable lines.
+	// Progress receives short human-readable lines: what the agent said and
+	// which tools it called, with the command or file of each call.
 	Progress io.Writer
+	// Paint colours the progress lines; the zero value writes plain text.
+	Paint term.Painter
 }
 
 // Result summarises a finished session.
@@ -335,7 +340,8 @@ func NewUUID() string {
 
 // streamEvent is the union of the JSON line shapes the harnesses print:
 // Claude Code and Cursor emit "assistant" messages and a final "result";
-// Codex emits items with a text.
+// Codex emits items: messages with a text, command executions with the
+// command, file changes with the changed paths.
 type streamEvent struct {
 	Type     string  `json:"type"`
 	Subtype  string  `json:"subtype"`
@@ -347,8 +353,13 @@ type streamEvent struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 	Item *struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type    string `json:"type"`
+		Text    string `json:"text"`
+		Command string `json:"command"`
+		Changes []struct {
+			Path string `json:"path"`
+			Kind string `json:"kind"`
+		} `json:"changes"`
 	} `json:"item"`
 }
 
@@ -399,10 +410,14 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 		}
 		switch ev.Type {
 		case "assistant":
-			for _, t := range extractText(ev.Message) {
+			for _, b := range extractBlocks(ev.Message) {
+				if b.Tool != "" {
+					progressTool(o, b.Tool, b.Detail)
+					continue
+				}
 				lastText.Reset()
-				lastText.WriteString(t)
-				progress(o, "agent", t)
+				lastText.WriteString(b.Text)
+				progress(o, "agent", b.Text)
 			}
 		case "result":
 			res.Output = ev.Result
@@ -410,10 +425,22 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 			res.Turns = ev.NumTurns
 			res.CostUSD = ev.CostUSD
 		default:
-			if ev.Item != nil && strings.Contains(ev.Item.Type, "message") && strings.TrimSpace(ev.Item.Text) != "" {
+			if ev.Item == nil {
+				continue
+			}
+			switch {
+			case strings.Contains(ev.Item.Type, "message") && strings.TrimSpace(ev.Item.Text) != "":
 				lastText.Reset()
 				lastText.WriteString(strings.TrimSpace(ev.Item.Text))
 				progress(o, "agent", ev.Item.Text)
+			case ev.Item.Type == "command_execution" && ev.Type == "item.started":
+				// Codex announces a command when it starts and again when it
+				// ends; one line per command is enough.
+				progressTool(o, "shell", ev.Item.Command)
+			case ev.Item.Type == "file_change" && ev.Type == "item.completed":
+				for _, c := range ev.Item.Changes {
+					progressTool(o, c.Kind, c.Path)
+				}
 			}
 		}
 	}
@@ -435,47 +462,108 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 	return nil
 }
 
-func extractText(m *struct {
+// block is one part of an assistant message: text the agent wrote, or a
+// tool call with the argument that identifies it.
+type block struct {
+	Text string
+	// Tool is the tool name; empty for text.
+	Tool string
+	// Detail is the command, file, pattern or description of the call.
+	Detail string
+}
+
+// detailKeys are the tool inputs that identify a call best, in order of
+// preference: the shell command, the file, a search or fetch target, then
+// a free-text description. Claude Code's Bash, Read, Write, Edit,
+// NotebookEdit, Glob, Grep, WebFetch and Agent tools all use one of them.
+var detailKeys = []string{"command", "file_path", "notebook_path", "pattern", "path", "query", "url", "description", "skill", "prompt"}
+
+func extractBlocks(m *struct {
 	Content json.RawMessage `json:"content"`
-}) []string {
+}) []block {
 	if m == nil || len(m.Content) == 0 {
 		return nil
 	}
 	var s string
 	if json.Unmarshal(m.Content, &s) == nil {
-		return []string{s}
+		return []block{{Text: s}}
 	}
 	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-		Name string `json:"name"`
+		Type  string          `json:"type"`
+		Text  string          `json:"text"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
 	}
 	if json.Unmarshal(m.Content, &blocks) != nil {
 		return nil
 	}
-	var out []string
+	var out []block
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
 			if strings.TrimSpace(b.Text) != "" {
-				out = append(out, strings.TrimSpace(b.Text))
+				out = append(out, block{Text: strings.TrimSpace(b.Text)})
 			}
 		case "tool_use":
-			out = append(out, "[tool: "+b.Name+"]")
+			out = append(out, block{Tool: b.Name, Detail: toolDetail(b.Input)})
 		}
 	}
 	return out
 }
 
+// toolDetail picks the input value that says what a tool call does.
+func toolDetail(input json.RawMessage) string {
+	var in map[string]any
+	if len(input) == 0 || json.Unmarshal(input, &in) != nil {
+		return ""
+	}
+	for _, k := range detailKeys {
+		if s, ok := in[k].(string); ok && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+// progress writes one line of what the agent said.
 func progress(o Options, prefix, text string) {
 	if o.Progress == nil {
 		return
 	}
-	text = strings.ReplaceAll(strings.TrimSpace(text), "\n", " ")
+	fmt.Fprintf(o.Progress, "  %s %s\n", o.Paint.Paint(prefix+":", term.Cyan), oneLine(text))
+}
+
+// progressTool writes one line for a tool call: the tool name and its
+// command or file, the latter relative to the workdir.
+func progressTool(o Options, name, detail string) {
+	if o.Progress == nil {
+		return
+	}
+	line := o.Paint.Paint(name, term.Bold)
+	if detail = oneLine(relative(detail, o.Workdir)); detail != "" {
+		line += " " + detail
+	}
+	fmt.Fprintf(o.Progress, "  %s %s\n", o.Paint.Paint("tool:", term.Magenta), line)
+}
+
+// oneLine collapses text to a single line of at most 200 characters.
+func oneLine(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
 	if len(text) > 200 {
 		text = text[:200] + "…"
 	}
-	fmt.Fprintf(o.Progress, "  %s: %s\n", prefix, text)
+	return text
+}
+
+// relative strips the workdir from a path inside it.
+func relative(path, workdir string) string {
+	if workdir == "" {
+		return path
+	}
+	if rel, ok := strings.CutPrefix(path, strings.TrimRight(workdir, "/")+"/"); ok && rel != "" {
+		return rel
+	}
+	return path
 }
 
 type limitedBuffer struct {
