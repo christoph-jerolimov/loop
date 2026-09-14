@@ -8,6 +8,7 @@ import (
 
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/state"
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 // WatchOptions controls the scheduler loop.
@@ -52,7 +53,7 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(driving, r.ID); mu.Unlock() }()
 			if err := e.Drive(ctx, r); err != nil && ctx.Err() == nil {
-				fmt.Fprintf(e.Out, "[%s] error: %v\n", shortID(r), err)
+				fmt.Fprintf(e.Out, "%s %s\n", e.Paint.Paint("["+shortID(r)+"]", term.Dim), e.Paint.Paint(fmt.Sprintf("error: %v", err), term.Red))
 			}
 		}()
 	}
@@ -89,7 +90,7 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 			if busy < e.Cfg.Workflow.Concurrency || len(runs) == 0 {
 				n, err := e.pick(ctx, o, runs)
 				if err != nil {
-					fmt.Fprintf(e.Out, "pick: %v\n", err)
+					fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("pick: %v", err), term.Red))
 				}
 				picked = n
 			}
@@ -102,7 +103,7 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 				if !o.PickNew || !e.anythingReady(ctx, o) {
 					wg.Wait()
 					if parked > 0 {
-						fmt.Fprintf(e.Out, "%d run(s) waiting at a gate; approve with: loop approve <run>\n", parked)
+						fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%d run(s) waiting at a gate; approve with: loop approve <run>", parked), term.Yellow))
 					}
 					return nil
 				}
@@ -138,7 +139,7 @@ func (e *Engine) resumeFromPR(ctx context.Context, only map[string]bool) {
 func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) (int, error) {
 	if err := e.checkStartBudget(); err != nil {
 		if !e.budgetNoted {
-			fmt.Fprintf(e.Out, "%v; not picking new items\n", err)
+			fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("%v; not picking new items", err), term.Yellow))
 			e.budgetNoted = true
 		}
 		return 0, nil
@@ -146,7 +147,7 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 	e.budgetNoted = false
 	items, errs := e.Sources.ListAll(ctx, o.Source)
 	for _, err := range errs {
-		fmt.Fprintf(e.Out, "warning: %v\n", err)
+		fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("warning: %v", err), term.Yellow))
 	}
 	activeItems := map[string]bool{}
 	heavy := 0
@@ -173,7 +174,7 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 			continue
 		}
 		if _, err := e.Start(ctx, full, o.Force); err != nil {
-			fmt.Fprintf(e.Out, "skip %s: %v\n", it.ID, err)
+			fmt.Fprintln(e.Out, e.Paint.Paint(fmt.Sprintf("skip %s: %v", it.ID, err), term.Red))
 			continue
 		}
 		started++

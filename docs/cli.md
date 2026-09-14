@@ -57,6 +57,26 @@ Start a run for one item and drive it in the foreground until the ticket
 is closed. Items with open dependencies or an in-progress marker are
 refused unless `--force` is given. On a terminal, gates ask interactively.
 
+While a session runs, every line the agent writes and every tool it calls
+is echoed with the run's item id in front: `agent:` lines carry the text,
+`tool:` lines the tool name and what it acts on, so a shell command shows
+its command line and a file read or edit shows the file (relative to the
+workdir):
+
+```
+[backlog:auth] starting session session (claude)
+  agent: I'll look at the existing login handler first.
+  tool: Read internal/auth/login.go
+  tool: Bash go test ./internal/auth/
+  tool: Edit internal/auth/login.go
+```
+
+On a terminal the output is coloured: the run prefix dimmed, failures red,
+gates and warnings yellow, the merge and the final `done` green. Colours
+are off when the output is not a terminal, when `NO_COLOR` is set or
+`TERM` is `dumb`; `CLICOLOR_FORCE=1` turns them on regardless. The raw
+transcript in `loop logs --session` is never coloured.
+
 | Flag | Meaning |
 | --- | --- |
 | `--force` | Ignore open dependencies and in-progress markers. |

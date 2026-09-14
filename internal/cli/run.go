@@ -12,6 +12,7 @@ import (
 
 	"github.com/christoph-jerolimov/loop/internal/engine"
 	"github.com/christoph-jerolimov/loop/internal/state"
+	"github.com/christoph-jerolimov/loop/internal/term"
 )
 
 var (
@@ -98,9 +99,10 @@ func claimNote(by string) string {
 }
 
 func report(r *state.Run) error {
+	p := term.Detect(os.Stdout)
 	switch r.Phase {
 	case state.PhaseDone:
-		fmt.Printf("\n%s done", r.ItemID)
+		fmt.Printf("\n%s %s", r.ItemID, p.Paint("done", term.Green))
 		if r.PR != nil {
 			fmt.Printf(" (%s)", r.PR.URL)
 		}
@@ -109,7 +111,7 @@ func report(r *state.Run) error {
 	case state.PhaseFailed, state.PhaseBlocked:
 		return fmt.Errorf("run %s %s: %s", r.ID, r.Phase, r.Error)
 	}
-	fmt.Printf("\nrun %s parked in phase %s", r.ID, r.Phase)
+	fmt.Printf("\nrun %s %s", r.ID, p.Paint("parked in phase "+string(r.Phase), term.Yellow))
 	if r.Gate != "" {
 		fmt.Printf(" at gate %s (loop approve %s)", r.Gate, r.ID)
 	}
