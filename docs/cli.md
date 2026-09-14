@@ -61,6 +61,7 @@ refused unless `--force` is given. On a terminal, gates ask interactively.
 | --- | --- |
 | `--force` | Ignore open dependencies and in-progress markers. |
 | `--no-watch` | Return once the PR is opened; monitor later with `loop watch`. |
+| `--dry-run` | Print what the run would do and stop: whether it would start (and why not), branch, workdir, base and fork, harness, model, attempts and timeout, the phase chain with gates, configured steps, PR and merge policy, budget caps, the PR title and the rendered plan and session prompts. Nothing is started, claimed or written. |
 | `--all` | Start every ready item in backlog order, respecting `workflow.concurrency`, and return when nothing is left. |
 | `-s, --source` | With `--all`: only items from this source. |
 

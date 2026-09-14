@@ -135,7 +135,7 @@ what it did spend.
 | `loop doctor` | Check config, tools, credentials, repository and sources before running. |
 | `loop list [-s source] [--ready] [--json]` | Open items in pick-up order with status. |
 | `loop show <item> [--prompt]` | Item details, or the rendered session prompt. |
-| `loop run <item> [--force] [--no-watch]` | Run one item to completion. |
+| `loop run <item> [--force] [--no-watch] [--dry-run]` | Run one item to completion; `--dry-run` only prints what it would do. |
 | `loop run --all [-s source]` | Run every ready item, respecting `workflow.concurrency`. |
 | `loop watch [--pick] [dir...]` | Drive all active runs, of one or several projects; with `--pick` also start ready items. |
 | `loop status [-a]` | Runs and phases. |

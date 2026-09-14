@@ -341,10 +341,21 @@ func (e *Engine) ensureFork(ctx context.Context, repo string) error {
 	return gitx.EnsureRemote(ctx, repo, "fork", e.Cfg.Repo.PushURL)
 }
 
+// BranchFor is the branch a run for the item gets, before any -2 suffix
+// that a taken name would add.
+func (e *Engine) BranchFor(it *item.Item) string {
+	return e.Cfg.Repo.BranchPrefix + item.Slug(it.NativeID+"-"+it.Title, 60)
+}
+
+// WorkdirFor is the checkout folder for a branch.
+func (e *Engine) WorkdirFor(branch string) string {
+	return e.Cfg.StatePath("workdirs", strings.TrimPrefix(branch, e.Cfg.Repo.BranchPrefix))
+}
+
 func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseCheckout, "")
 	it := r.Item
-	want := e.Cfg.Repo.BranchPrefix + item.Slug(it.NativeID+"-"+it.Title, 60)
+	want := e.BranchFor(it)
 	var branch string
 	var err error
 	if e.Cfg.Repo.Workdir == "worktree" {
@@ -360,13 +371,13 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 			return err
 		}
 		r.Branch = branch
-		r.Workdir = e.Cfg.StatePath("workdirs", strings.TrimPrefix(branch, e.Cfg.Repo.BranchPrefix))
+		r.Workdir = e.WorkdirFor(branch)
 		e.logf(r, "creating worktree %s on branch %s", r.Workdir, branch)
 		if err := gitx.AddWorktree(ctx, e.baseRepo(), r.Workdir, branch, e.Cfg.Repo.Base); err != nil {
 			return err
 		}
 	} else {
-		r.Workdir = e.Cfg.StatePath("workdirs", strings.TrimPrefix(want, e.Cfg.Repo.BranchPrefix))
+		r.Workdir = e.WorkdirFor(want)
 		e.logf(r, "cloning into %s", r.Workdir)
 		if err := gitx.Clone(ctx, e.Cfg.Repo.URL, r.Workdir, want+"-tmp", e.Cfg.Repo.Base); err != nil {
 			return err

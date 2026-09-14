@@ -19,6 +19,7 @@ var (
 	runAll     bool
 	runSource  string
 	runNoWatch bool
+	runDryRun  bool
 )
 
 var runCmd = &cobra.Command{
@@ -53,6 +54,9 @@ workflow.concurrency, and the command returns when nothing is left.`,
 			return err
 		}
 		rd := a.Engine.Check(ctx, it)
+		if runDryRun {
+			return dryRun(a, it, rd)
+		}
 		if !rd.Ready && !runForce {
 			if rd.ActiveRun != nil {
 				return fmt.Errorf("item %s already has active run %s in phase %s (see: loop status)", it.ID, rd.ActiveRun.ID, rd.ActiveRun.Phase)
@@ -118,6 +122,7 @@ func init() {
 	runCmd.Flags().BoolVar(&runAll, "all", false, "run every ready item")
 	runCmd.Flags().StringVarP(&runSource, "source", "s", "", "with --all: only items from this source")
 	runCmd.Flags().BoolVar(&runNoWatch, "no-watch", false, "stop after the PR is opened; monitor later with loop watch")
+	runCmd.Flags().BoolVar(&runDryRun, "dry-run", false, "print what the run would do (branch, harness, steps, policy, prompt) without doing any of it")
 }
 
 var watchPick bool
