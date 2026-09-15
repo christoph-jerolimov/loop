@@ -39,6 +39,9 @@ func (e *Engine) statusOf(r *state.Run) (string, string) {
 	rounds := fmt.Sprintf("fix rounds %d/%d", r.FixRounds, e.Cfg.Workflow.FixRounds)
 	switch r.Phase {
 	case state.PhaseDone:
+		if r.Item != nil && r.Item.Recurring() {
+			return "success", "merged; " + rounds
+		}
 		return "success", "merged and ticket closed; " + rounds
 	case state.PhaseFailed:
 		return "failure", "failed: " + firstLine(r.Error)
@@ -53,6 +56,9 @@ func (e *Engine) statusOf(r *state.Run) (string, string) {
 	case state.PhaseMerge:
 		return "pending", "merging; " + rounds
 	case state.PhaseClose, state.PhaseCleanup:
+		if r.Item != nil && r.Item.Recurring() {
+			return "pending", "merged; cleaning up; " + rounds
+		}
 		return "pending", "merged; closing the ticket; " + rounds
 	}
 	desc := "monitoring; " + rounds

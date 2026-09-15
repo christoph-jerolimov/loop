@@ -278,6 +278,20 @@ func (d *doctor) checkSources(cfg *config.Config, h host.Host) {
 			continue
 		}
 		d.ok("source %s (%s): %d open item(s)", s.Name(), s.Type(), len(items))
+		recurring := 0
+		for _, it := range items {
+			if !it.Recurring() {
+				continue
+			}
+			if _, err := it.Interval(); err != nil {
+				d.fail("source %s: item %s: %v", s.Name(), it.ID, err)
+				continue
+			}
+			recurring++
+		}
+		if recurring > 0 {
+			d.ok("source %s: %d recurring item(s) with a valid schedule", s.Name(), recurring)
+		}
 		if g, ok := s.(interface{ CommentsReason(context.Context) string }); ok {
 			d.ok("source %s: ticket comments %s", s.Name(), g.CommentsReason(d.ctx))
 		}

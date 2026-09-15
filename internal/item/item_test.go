@@ -69,6 +69,62 @@ func TestParsePriority(t *testing.T) {
 	}
 }
 
+func TestParseInterval(t *testing.T) {
+	const day = 24 * time.Hour
+	cases := map[string]time.Duration{
+		"7d": 7 * day, "2w": 14 * day, "1d12h": 36 * time.Hour, "1w2d": 9 * day, "36h": 36 * time.Hour, "90m": 90 * time.Minute,
+		"hourly": time.Hour, "Daily": day, "weekly": 7 * day, "fortnightly": 14 * day, "monthly": 30 * day, " 3d ": 3 * day,
+	}
+	for in, want := range cases {
+		if got, err := ParseInterval(in); err != nil || got != want {
+			t.Errorf("ParseInterval(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "soon", "7", "d", "30s", "0d", "-1d", "1h1d"} {
+		if _, err := ParseInterval(in); err == nil {
+			t.Errorf("ParseInterval(%q) must fail", in)
+		}
+	}
+	if d, err := ParseDuration("45m"); err != nil || d != 45*time.Minute {
+		t.Errorf("ParseDuration(45m) = %v, %v", d, err)
+	}
+	if _, err := ParseDuration(""); err == nil {
+		t.Error("ParseDuration must reject the empty string")
+	}
+	for d, want := range map[time.Duration]string{7 * day: "1w", 3 * day: "3d", 36 * time.Hour: "1d12h", 90 * time.Minute: "1h30m", 0: "0s"} {
+		if got := FormatInterval(d); got != want {
+			t.Errorf("FormatInterval(%v) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+func TestRecurringDirective(t *testing.T) {
+	it := &Item{Body: "Bump the dependencies.\n\nEvery: 7d\n"}
+	it.ApplyBodyDirectives()
+	if !it.Recurring() || it.Every != "7d" {
+		t.Errorf("every directive not applied: %+v", it)
+	}
+	if d, err := it.Interval(); err != nil || d != 7*24*time.Hour {
+		t.Errorf("Interval = %v, %v", d, err)
+	}
+	it = &Item{Body: "every: 1d", Every: "weekly"}
+	it.ApplyBodyDirectives()
+	if it.Every != "weekly" {
+		t.Error("an explicit schedule wins over the body line")
+	}
+	one := &Item{Body: "Just once."}
+	one.ApplyBodyDirectives()
+	if one.Recurring() {
+		t.Error("an item without every: is not recurring")
+	}
+	if d, err := one.Interval(); err != nil || d != 0 {
+		t.Errorf("one-shot Interval = %v, %v", d, err)
+	}
+	if _, err := (&Item{Every: "soon"}).Interval(); err == nil {
+		t.Error("an invalid schedule must be an error")
+	}
+}
+
 func TestSlug(t *testing.T) {
 	if s := Slug("Add OAuth2 login (Google)!", 16); s != "add-oauth2-login" {
 		t.Errorf("slug = %q", s)

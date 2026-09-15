@@ -66,9 +66,38 @@ up to three times, then the run parks the same way. After a human resolves
 the cause, `loop resume <run>` continues to the merge.
 
 `close` runs the source's close action (`close_issue_on_merge: true`), then
-waits until the source reports the item closed. `cleanup` runs
-`steps.cleanup`, then removes the worktree, the local branch and, after a
-merge, the remote branch.
+waits until the source reports the item closed; for a
+[recurring item](#recurring-items) it only releases the claim. `cleanup`
+runs `steps.cleanup`, then removes the worktree, the local branch and,
+after a merge, the remote branch. A done run records its outcome in
+`run.yaml`: `merged`, or `no-changes` for a recurring run that opened no
+PR.
+
+## Recurring items
+
+An item with `every: 7d` (frontmatter or a body line, see
+[configuration](configuration.md#recurring-items)) is a task that repeats.
+Each occurrence is a run like any other, with two differences:
+
+- **Start.** `loop watch --pick` and `loop run --all` start the item when
+  it is due: never run yet, or the interval has passed since the previous
+  run started. `loop run <item>` starts it at any time and is the manual
+  trigger. The branch carries the date of the occurrence
+  (`loop/<id>-<title>-20260915`), so each occurrence has its own branch and
+  PR. While a previous occurrence is active, or parked as `blocked` with
+  its PR still open, the item waits; `loop list` says so. Nothing can
+  depend on a recurring item, because it never closes.
+- **End.** After the merge the ticket stays open: loop releases the claim
+  and notes the merge and the next due time on it. The PR body has no
+  `Closes #n`. When the session commits nothing, the run ends as `done`
+  with outcome `no-changes`, without a PR, and the ticket gets a note;
+  for a one-shot item the same session would be a failed attempt.
+
+The session template gets `.Item.Every` and `.Previous` (run id, outcome,
+PR and summary of the previous occurrence), so the agent knows what last
+week's run did. `budget.daily_runs` and `budget.daily_cost` cap recurring
+runs like any other, which also bounds the burst after a lost `.loop`
+folder makes every recurring item due at once.
 
 ## Plan before code
 

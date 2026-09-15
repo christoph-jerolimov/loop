@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/christoph-jerolimov/loop/internal/agent"
+	"github.com/christoph-jerolimov/loop/internal/item"
 )
 
 // FileName is the project configuration file.
@@ -364,15 +365,15 @@ const (
 // Duration is a yaml-friendly time.Duration.
 type Duration time.Duration
 
-// UnmarshalYAML parses "45m", "1h30m" etc.
+// UnmarshalYAML parses "45m", "1h30m", "2d" etc.
 func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	var s string
 	if err := n.Decode(&s); err != nil {
 		return err
 	}
-	v, err := time.ParseDuration(s)
+	v, err := item.ParseDuration(s)
 	if err != nil {
-		return fmt.Errorf("invalid duration %q: %w", s, err)
+		return fmt.Errorf("%w (Go syntax such as 45m or 1h30m, plus d for days and w for weeks)", err)
 	}
 	*d = Duration(v)
 	return nil

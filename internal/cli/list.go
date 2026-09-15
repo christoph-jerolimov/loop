@@ -12,6 +12,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/engine"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
+	"github.com/christoph-jerolimov/loop/internal/state"
 )
 
 var (
@@ -23,9 +24,11 @@ var (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List open backlog items in pick-up order",
-	Long: `Items are ordered by the position of their source in loop.yaml, then
-oldest first. The STATUS column shows why an item would be skipped:
-blocked by open dependencies, in progress (claimed), or already running.`,
+	Long: `Items are ordered by priority, then by the position of their source in
+loop.yaml, then oldest first. The STATUS column shows why an item would be
+skipped: blocked by open dependencies, in progress (claimed), already
+running, or (for a recurring item) not due yet. The EVERY column is the
+schedule of a recurring item.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := load()
 		if err != nil {
@@ -46,7 +49,7 @@ blocked by open dependencies, in progress (claimed), or already running.`,
 			}
 			var rows []row
 			for i, it := range items {
-				if listReady && !it.Readiness.Ready {
+				if listReady && !it.Readiness.Pickable() {
 					continue
 				}
 				rows = append(rows, row{i + 1, status(it), it.Item, it.Readiness})
@@ -54,37 +57,23 @@ blocked by open dependencies, in progress (claimed), or already running.`,
 			return enc.Encode(rows)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "#\tID\tTITLE\tPRIORITY\tSTATUS\tDEPENDS ON")
+		fmt.Fprintln(tw, "#\tID\tTITLE\tPRIORITY\tEVERY\tSTATUS\tDEPENDS ON")
 		for i, it := range items {
-			if listReady && !it.Readiness.Ready {
+			if listReady && !it.Readiness.Pickable() {
 				continue
 			}
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", i+1, it.Item.ID, prompt.Trunc(it.Item.Title, 60), item.PriorityName(it.Item.Priority), status(it), strings.Join(it.Item.DependsOn, ", "))
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", i+1, it.Item.ID, prompt.Trunc(it.Item.Title, 60), item.PriorityName(it.Item.Priority), it.Item.Every, status(it), strings.Join(it.Item.DependsOn, ", "))
 		}
 		return tw.Flush()
 	},
 }
 
-func status(it engine.ReadyItem) string {
-	rd := it.Readiness
-	switch {
-	case rd.ActiveRun != nil:
-		return "running (" + string(rd.ActiveRun.Phase) + ")"
-	case rd.InProgress:
-		if it.Item.ClaimedBy != "" {
-			return "in progress (" + it.Item.ClaimedBy + ")"
-		}
-		return "in progress"
-	case len(rd.OpenDeps) > 0:
-		return "blocked by " + strings.Join(rd.OpenDeps, ", ")
-	}
-	return "ready"
-}
+func status(it engine.ReadyItem) string { return it.Readiness.Status(it.Item) }
 
 func init() {
 	listCmd.Flags().StringVarP(&listSource, "source", "s", "", "only items from this source (name or type)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "print JSON")
-	listCmd.Flags().BoolVar(&listReady, "ready", false, "only items that can be started now")
+	listCmd.Flags().BoolVar(&listReady, "ready", false, "only items that would be started now (ready and, for recurring items, due)")
 }
 
 var showPrompt bool
@@ -133,9 +122,34 @@ var showCmd = &cobra.Command{
 		if it.Priority != 0 {
 			fmt.Printf("priority:   %s\n", item.PriorityName(it.Priority))
 		}
+		if it.Recurring() {
+			fmt.Printf("every:      %s%s\n", it.Every, scheduleNote(rd))
+			if rd.LastRun != nil {
+				fmt.Printf("last run:   %s (%s%s)\n", rd.LastRun.ID, rd.LastRun.Phase, outcomeNote(rd.LastRun))
+				fmt.Printf("next due:   %s\n", rd.NextDue.Local().Format("2006-01-02 15:04"))
+			} else {
+				fmt.Printf("last run:   never; due now\n")
+			}
+		}
 		fmt.Printf("comments:   %d\n\n%s\n", len(it.Comments), it.Body)
 		return nil
 	},
+}
+
+// scheduleNote renders the parsed interval, or why it did not parse.
+func scheduleNote(rd engine.Readiness) string {
+	if rd.ScheduleError != "" {
+		return " (" + rd.ScheduleError + ")"
+	}
+	return ""
+}
+
+// outcomeNote appends a done run's outcome to its phase.
+func outcomeNote(r *state.Run) string {
+	if r.Outcome == "" {
+		return ""
+	}
+	return ", " + string(r.Outcome)
 }
 
 func init() {

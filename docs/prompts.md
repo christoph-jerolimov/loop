@@ -10,7 +10,8 @@ rendered session prompt for an item.
 | Field | Type | Available in |
 | --- | --- | --- |
 | `.Project` | string | all |
-| `.Item` | item: `.ID`, `.NativeID`, `.Source`, `.Title`, `.Body`, `.URL`, `.Labels`, `.Created`, `.DependsOn`, `.Comments` | all |
+| `.Item` | item: `.ID`, `.NativeID`, `.Source`, `.Title`, `.Body`, `.URL`, `.Labels`, `.Created`, `.DependsOn`, `.Every` (the schedule of a recurring item, empty otherwise), `.Comments` | all |
+| `.Previous` | the previous occurrence of a recurring item: `.RunID`, `.Started`, `.Phase`, `.Outcome`, `.PRURL`, `.Summary`, `.Error`, and `.Result` (a one-line rendering such as `merged (url)` or `no changes`); nil for one-shot items and the first occurrence | all |
 | `.Item.Comments` | list of `.Author`, `.Body`, `.Created`, `.URL` | all (empty when the source sets `comments: none`) |
 | `.Branch`, `.Base`, `.Workdir`, `.RunID` | string | all |
 | `.SummaryFile` | path the agent should write the PR summary to | all |
@@ -68,6 +69,16 @@ anyone can write them and they reach the agent verbatim; see
 
 The same pattern applies to fix rounds: the review, CI and conflict
 templates receive the feedback as data and decide how to present it.
+
+## Recurring items
+
+For an item with `every:` the built-in session template adds a "Recurring
+task" section: the interval, what the previous occurrence did (`.Previous`,
+with its summary quoted), and the instruction that changing nothing is a
+valid result, because a session without commits ends a recurring run as
+"no changes" instead of failing it. A custom template can use the same
+data; without the instruction the agent may invent work to have something
+to commit.
 
 ## Answering reviewers
 

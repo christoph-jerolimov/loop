@@ -29,10 +29,12 @@ var runCmd = &cobra.Command{
 	Long: `Starts a run for the item: checkout, setup steps, agent session, verify
 steps, pull request, then polls the PR for reviews and CI until it is merged
 and the ticket closed. Items with open dependencies or an in-progress marker
-are refused unless --force is given.
+are refused unless --force is given. A recurring item (every: 7d) starts
+even when it is not due yet: this command is its manual trigger.
 
 With --all every ready item is picked up in backlog order, respecting
-workflow.concurrency, and the command returns when nothing is left.`,
+workflow.concurrency, and the command returns when nothing is left.
+Recurring items are started only when they are due.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := load()
@@ -73,6 +75,9 @@ workflow.concurrency, and the command returns when nothing is left.`,
 			}
 			return errors.New("not started; use --force to run anyway")
 		}
+		if rd.Ready && !rd.Due {
+			fmt.Fprintf(os.Stderr, "note: %s is not due until %s; starting it now anyway\n", it.ID, rd.NextDue.Local().Format("2006-01-02 15:04"))
+		}
 		r, err := a.Engine.Start(ctx, it, runForce)
 		if err != nil {
 			return err
@@ -103,7 +108,10 @@ func report(r *state.Run) error {
 	switch r.Phase {
 	case state.PhaseDone:
 		fmt.Printf("\n%s %s", r.ItemID, p.Paint("done", term.Green))
-		if r.PR != nil {
+		switch {
+		case r.Outcome == state.OutcomeNoChanges:
+			fmt.Print(" (no changes, no PR)")
+		case r.PR != nil:
 			fmt.Printf(" (%s)", r.PR.URL)
 		}
 		fmt.Println()

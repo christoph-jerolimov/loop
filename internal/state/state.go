@@ -57,6 +57,19 @@ const (
 	FixVerify   FixReason = "verify"
 )
 
+// Outcome says how a done run ended.
+type Outcome string
+
+// Outcomes of a done run.
+const (
+	// OutcomeMerged: the PR was merged.
+	OutcomeMerged Outcome = "merged"
+	// OutcomeNoChanges: the session found nothing to change, so no PR was
+	// opened. Only recurring items end this way; for a one-shot item a
+	// session without commits is a failed attempt.
+	OutcomeNoChanges Outcome = "no-changes"
+)
+
 // PR is the pull request of a run.
 type PR struct {
 	Number  int    `json:"number" yaml:"number"`
@@ -65,7 +78,12 @@ type PR struct {
 	HeadSHA string `json:"head_sha" yaml:"head_sha"`
 	Draft   bool   `json:"draft" yaml:"draft"`
 	Merged  bool   `json:"merged" yaml:"merged"`
+	// Closed records that the PR was closed without a merge.
+	Closed bool `json:"closed,omitempty" yaml:"closed,omitempty"`
 }
+
+// Open reports whether the PR is still open on the host.
+func (p *PR) Open() bool { return p != nil && !p.Merged && !p.Closed }
 
 // Event is one history entry.
 type Event struct {
@@ -108,6 +126,8 @@ type Run struct {
 
 	// SelfReviewed records that the self-review before the PR ran.
 	SelfReviewed bool `json:"self_reviewed,omitempty" yaml:"self_reviewed,omitempty"`
+	// Outcome says how a done run ended: merged, or no-changes.
+	Outcome Outcome `json:"outcome,omitempty" yaml:"outcome,omitempty"`
 
 	// Gate is the gate the run waits at; GateApproved is set by `loop approve`.
 	Gate         string `json:"gate,omitempty" yaml:"gate,omitempty"`
@@ -137,14 +157,27 @@ type Session struct {
 // Store manages the runs folder.
 type Store struct {
 	Root string // <project>/.loop/runs
+	// Now stamps new runs; nil means the wall clock. The engine shares its
+	// clock here so a recurring item's next occurrence is computed from
+	// the same time that started the previous one.
+	Now func() time.Time
 }
 
 // NewStore creates the store under the given .loop folder.
 func NewStore(loopDir string) *Store { return &Store{Root: filepath.Join(loopDir, "runs")} }
 
+func (s *Store) now() time.Time {
+	if s.Now == nil {
+		return time.Now()
+	}
+	return s.Now()
+}
+
 // NewID builds a run id from the item and the current time.
-func NewID(it *item.Item) string {
-	return fmt.Sprintf("%s-%s", time.Now().Format("20060102-150405"), item.Slug(it.Source+"-"+it.NativeID, 40))
+func NewID(it *item.Item) string { return idAt(it, time.Now()) }
+
+func idAt(it *item.Item, t time.Time) string {
+	return fmt.Sprintf("%s-%s", t.Format("20060102-150405"), item.Slug(it.Source+"-"+it.NativeID, 40))
 }
 
 // Dir returns a run's folder.
@@ -152,9 +185,19 @@ func (s *Store) Dir(id string) string { return filepath.Join(s.Root, id) }
 
 // Create initialises and saves a new run.
 func (s *Store) Create(it *item.Item, runner string) (*Run, error) {
+	now := s.now()
 	r := &Run{
-		ID: NewID(it), ItemID: it.ID, Item: it, Phase: PhaseQueued, Runner: runner,
-		Created: time.Now(), Updated: time.Now(),
+		ID: idAt(it, now), ItemID: it.ID, Item: it, Phase: PhaseQueued, Runner: runner,
+		Created: now, Updated: now,
+	}
+	// Ids carry the second, so a second run of the same item within that
+	// second gets a suffix instead of overwriting the first.
+	base := r.ID
+	for i := 2; ; i++ {
+		if _, err := os.Stat(s.Dir(r.ID)); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		r.ID = fmt.Sprintf("%s-%d", base, i)
 	}
 	r.dir = s.Dir(r.ID)
 	if err := os.MkdirAll(r.dir, 0o755); err != nil {
@@ -244,6 +287,38 @@ func (s *Store) ForItem(itemID string) (*Run, error) {
 	}
 	for _, r := range all {
 		if r.ItemID == itemID && r.Phase.Active() {
+			return r, nil
+		}
+	}
+	return nil, nil
+}
+
+// LastForItem returns the newest run for an item in any phase, or nil.
+// Recurring items are due again an interval after this run started.
+func (s *Store) LastForItem(itemID string) (*Run, error) {
+	all, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range all {
+		if r.ItemID == itemID {
+			return r, nil
+		}
+	}
+	return nil, nil
+}
+
+// OpenForItem returns the newest run for an item that is still active or
+// that parked with its pull request still open, or nil. A recurring item
+// is not started again while such a run exists, so a parked PR does not
+// get a sibling.
+func (s *Store) OpenForItem(itemID string) (*Run, error) {
+	all, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range all {
+		if r.ItemID == itemID && (r.Phase.Active() || r.PR.Open()) {
 			return r, nil
 		}
 	}

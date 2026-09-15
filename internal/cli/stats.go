@@ -46,6 +46,9 @@ and what was spent today against the configured budget.`,
 		b := a.Cfg.Budget
 		fmt.Printf("runs:            %d (%s)\n", st.Runs, strings.Join(parts, ", "))
 		fmt.Printf("merged PRs:      %d\n", st.Merged)
+		if st.NoChanges > 0 {
+			fmt.Printf("no changes:      %d recurring run(s) without a PR\n", st.NoChanges)
+		}
 		fmt.Printf("fix rounds:      %.1f per PR\n", st.FixRounds)
 		fmt.Printf("sessions:        %d, %s of agent time\n", st.Sessions, st.AgentTime.Round(time.Second))
 		fmt.Printf("cost:            $%.2f total, $%.2f per merged PR\n", st.Cost, st.CostMerge)

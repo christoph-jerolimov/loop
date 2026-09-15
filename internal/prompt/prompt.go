@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/christoph-jerolimov/loop/internal/item"
 )
@@ -66,6 +67,38 @@ type PRRef struct {
 	Title  string
 }
 
+// PreviousRun is what the previous occurrence of a recurring item did.
+type PreviousRun struct {
+	RunID string
+	// Phase is where the run ended (done, failed, blocked) and Outcome how
+	// a done run ended (merged, no-changes).
+	Phase   string
+	Outcome string
+	Started time.Time
+	PRURL   string
+	// Summary is what that run's agent wrote for the PR description.
+	Summary string
+	Error   string
+}
+
+// Result renders the previous run's end for people: "merged (url)",
+// "no changes", "failed: ...".
+func (p *PreviousRun) Result() string {
+	switch {
+	case p.Outcome == "merged" && p.PRURL != "":
+		return "merged (" + p.PRURL + ")"
+	case p.Outcome == "no-changes":
+		return "no changes"
+	case p.Outcome != "":
+		return p.Outcome
+	case p.Phase == "done":
+		return "done"
+	case p.Error != "":
+		return p.Phase + ": " + p.Error
+	}
+	return p.Phase
+}
+
 // Data is what templates see.
 type Data struct {
 	Project     string
@@ -98,6 +131,9 @@ type Data struct {
 	// diff against the base, and where the session writes its findings.
 	Diff         string
 	FindingsFile string
+	// Previous is the previous occurrence of a recurring item (.Item.Every
+	// is set); nil for one-shot items and the first occurrence.
+	Previous *PreviousRun
 }
 
 var funcs = template.FuncMap{

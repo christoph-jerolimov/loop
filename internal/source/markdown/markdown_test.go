@@ -66,6 +66,24 @@ func TestListClaimClose(t *testing.T) {
 	}
 }
 
+func TestRecurringFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "deps.md", "---\ntitle: Bump dependencies\nevery: 7d\n---\nUpdate everything.\n")
+	write(t, dir, "lint.md", "# Lint\n\nEvery: weekly\n")
+	s := New(config.SourceConfig{Name: "backlog", Type: "markdown"}, 0, dir)
+	deps, err := s.Get(context.Background(), "deps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deps.Recurring() || deps.Every != "7d" {
+		t.Errorf("frontmatter every not read: %+v", deps)
+	}
+	lint, _ := s.Get(context.Background(), "lint")
+	if lint.Every != "weekly" {
+		t.Errorf("body every not read: %+v", lint)
+	}
+}
+
 func TestEditPreservesFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	original := "---\n# planning notes\ntitle: Add auth   # keep this comment\ncreated: 2026-01-02\npriority: 3\nlabels: [ready, auth]\n---\nBody stays.\n\n- list item\n"

@@ -88,16 +88,19 @@ func isBudget(err error) bool {
 
 // Stats summarises every run of the project.
 type Stats struct {
-	Runs      int            `json:"runs"`
-	ByPhase   map[string]int `json:"by_phase"`
-	Merged    int            `json:"merged"`
-	Cost      float64        `json:"cost_usd"`
-	CostMerge float64        `json:"cost_per_merged_pr_usd"`
-	AgentTime time.Duration  `json:"agent_time"`
-	Sessions  int            `json:"sessions"`
-	FixRounds float64        `json:"mean_fix_rounds"`
-	Duration  time.Duration  `json:"mean_duration_to_done"`
-	Today     Spend          `json:"today"`
+	Runs    int            `json:"runs"`
+	ByPhase map[string]int `json:"by_phase"`
+	Merged  int            `json:"merged"`
+	// NoChanges counts recurring runs that ended without a PR because the
+	// session found nothing to change.
+	NoChanges int           `json:"no_changes"`
+	Cost      float64       `json:"cost_usd"`
+	CostMerge float64       `json:"cost_per_merged_pr_usd"`
+	AgentTime time.Duration `json:"agent_time"`
+	Sessions  int           `json:"sessions"`
+	FixRounds float64       `json:"mean_fix_rounds"`
+	Duration  time.Duration `json:"mean_duration_to_done"`
+	Today     Spend         `json:"today"`
 }
 
 // Stats computes the project statistics from the run store.
@@ -122,6 +125,9 @@ func (e *Engine) Stats() (*Stats, error) {
 			if r.PR.Merged {
 				st.Merged++
 			}
+		}
+		if r.Outcome == state.OutcomeNoChanges {
+			st.NoChanges++
 		}
 		if r.Phase == state.PhaseDone {
 			done++

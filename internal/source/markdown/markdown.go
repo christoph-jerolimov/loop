@@ -2,8 +2,8 @@
 // markdown files with optional YAML frontmatter.
 //
 // Frontmatter keys: id, title, status (open|in-progress|closed), created,
-// labels, depends_on, model, loop_run. A missing title falls back to the
-// first "# " heading, then to the file name.
+// labels, depends_on, model, priority, every, loop_run. A missing title
+// falls back to the first "# " heading, then to the file name.
 package markdown
 
 import (
@@ -49,6 +49,7 @@ type Frontmatter struct {
 	DependsOn []string `yaml:"depends_on,omitempty"`
 	Model     string   `yaml:"model,omitempty"`
 	Priority  string   `yaml:"priority,omitempty"`
+	Every     string   `yaml:"every,omitempty"`
 	LoopRun   string   `yaml:"loop_run,omitempty"`
 	Closed    string   `yaml:"closed,omitempty"`
 	// Rest keeps unknown keys so rewriting the file does not lose them.
@@ -119,6 +120,7 @@ func (s *Source) load(path string) (*item.Item, error) {
 		DependsOn:   fm.DependsOn,
 		Model:       fm.Model,
 		Priority:    item.ParsePriority(fm.Priority),
+		Every:       strings.TrimSpace(fm.Every),
 		ClaimedBy:   fm.LoopRun,
 		Extra:       map[string]string{"path": path},
 	}

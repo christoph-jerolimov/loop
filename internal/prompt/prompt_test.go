@@ -36,6 +36,34 @@ func TestDefaultTemplatesRender(t *testing.T) {
 	if strings.Contains(out, "Discussion on the ticket") {
 		t.Error("comments section rendered without comments")
 	}
+	if strings.Contains(out, "Recurring task") {
+		t.Error("recurring section rendered for a one-shot item")
+	}
+	d.Item.Every = "7d"
+	out, _ = RenderFile(TplSession, "", d)
+	if !strings.Contains(out, "runs every 7d") || !strings.Contains(out, "first occurrence") {
+		t.Errorf("recurring section missing for the first occurrence:\n%s", out)
+	}
+	d.Previous = &PreviousRun{RunID: "r0", Phase: "done", Outcome: "merged", PRURL: "https://x/pull/2", Started: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC), Summary: "Bumped two modules."}
+	out, _ = RenderFile(TplSession, "", d)
+	if !strings.Contains(out, "run `r0`, 2026-09-08) ended with: merged (https://x/pull/2)") || !strings.Contains(out, "> Bumped two modules.") {
+		t.Errorf("previous occurrence missing:\n%s", out)
+	}
+}
+
+func TestPreviousRunResult(t *testing.T) {
+	cases := map[string]PreviousRun{
+		"merged (u)":         {Phase: "done", Outcome: "merged", PRURL: "u"},
+		"no changes":         {Phase: "done", Outcome: "no-changes"},
+		"done":               {Phase: "done"},
+		"failed: agent died": {Phase: "failed", Error: "agent died"},
+		"blocked":            {Phase: "blocked"},
+	}
+	for want, p := range cases {
+		if got := p.Result(); got != want {
+			t.Errorf("%+v.Result() = %q, want %q", p, got, want)
+		}
+	}
 }
 
 func TestDefaultTemplateText(t *testing.T) {

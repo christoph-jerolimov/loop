@@ -245,7 +245,7 @@ type pickResult struct {
 	full bool
 	// open is the number of open items in the sources; the counters below
 	// say why the ones not started were skipped.
-	open, running, inProgress, blocked, unloadable int
+	open, running, inProgress, blocked, notDue, unloadable int
 }
 
 // note explains why nothing (more) was picked, "" when there is nothing
@@ -271,6 +271,7 @@ func (p pickResult) note(concurrency int) string {
 		{p.running, "already running"},
 		{p.inProgress, "marked in progress"},
 		{p.blocked, "blocked by open dependencies"},
+		{p.notDue, "recurring and not due yet"},
 		{p.unloadable, "could not be loaded"},
 	} {
 		if c.n > 0 {
@@ -323,12 +324,22 @@ func (e *Engine) pick(ctx context.Context, o WatchOptions, active []*state.Run) 
 			continue
 		}
 		rd := e.Check(ctx, full)
-		if !rd.Ready && !(o.Force && rd.ActiveRun == nil) {
+		switch {
+		case rd.ActiveRun != nil:
+			res.running++
+			continue
+		case !rd.Due:
+			// The schedule is never forced: loop run <item> is the manual
+			// trigger for a recurring item.
+			res.notDue++
+			continue
+		}
+		if !rd.Ready && !(o.Force && rd.ScheduleError == "") {
 			switch {
-			case rd.ActiveRun != nil:
-				res.running++
 			case rd.InProgress:
 				res.inProgress++
+			case rd.ScheduleError != "":
+				res.unloadable++
 			default:
 				res.blocked++
 			}
@@ -350,7 +361,7 @@ func (e *Engine) anythingReady(ctx context.Context, o WatchOptions) bool {
 	}
 	items, _ := e.Sources.ListAll(ctx, o.Source)
 	for _, it := range items {
-		if rd := e.Check(ctx, it); rd.Ready {
+		if rd := e.Check(ctx, it); rd.Pickable() {
 			return true
 		}
 	}
