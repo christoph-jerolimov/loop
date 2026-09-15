@@ -36,6 +36,11 @@ at the end, so a missing tool or token shows up before the first run;
 `--no-doctor` skips them. With placeholders left to edit, `loop doctor` is
 the next step instead.
 
+`loop.yaml` holds only what `init` decided (repository, sources, detected
+verify step and permissions, the merge policy); every other option keeps
+its default and is listed in the [configuration reference](configuration.md).
+`--full` writes the annotated version with every option and its comment.
+
 Prompts use the built-in templates, which improve with every loop release.
 `--prompts` writes editable copies to `prompts/` and points `loop.yaml` at
 them; in an existing project it writes the copies and prints the keys to

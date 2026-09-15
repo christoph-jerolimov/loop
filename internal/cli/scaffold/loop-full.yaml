@@ -1,0 +1,158 @@
+# loop project configuration. See docs/configuration.md for every option.
+name: [[.Name]]
+
+repo:
+  url: [[.URL]]   # github.com or gitlab URLs are recognised
+  # github: my-org/my-service   (derived from url; or gitlab: group/project + gitlab_url)
+  base: [[.Base]]
+  workdir: worktree          # worktree (default, fast) or clone
+  branch_prefix: loop/
+
+# Backlog sources, in pick-up order. Within a source the oldest item is
+# picked first. Items can depend on each other via "depends on: ..." lines,
+# frontmatter, or native Jira links. "loop init --source github|gitlab|jira"
+# adds a source; one for the repository's host is added when its token is set.
+sources:
+  - name: backlog
+    type: markdown
+    path: backlog            # folder of *.md files with optional frontmatter
+    claim: true              # writes status: in-progress + loop_run into the file
+[[if .GitHub]]
+  - name: gh
+    type: github
+    # repo: my-org/my-service   (defaults to repo.url)
+    labels: [ready-for-agent]   # recommended: only pick explicitly marked issues
+    claim_label: loop:in-progress
+    comments: writers           # all | writers (owner + write access, default) | none
+[[else]]
+  # - name: gh
+  #   type: github
+  #   # repo: my-org/my-service   (defaults to repo.url)
+  #   labels: [ready-for-agent]   # recommended: only pick explicitly marked issues
+  #   claim_label: loop:in-progress
+  #   comments: writers           # all | writers (owner + write access, default) | none
+[[end]][[if .GitLab]]
+  - name: gl
+    type: gitlab
+    # repo: group/project      (defaults to repo.gitlab)
+    # url: https://gitlab.example.com
+    labels: [ready-for-agent]
+    claim_label: loop:in-progress
+[[else]]
+  # - name: gl
+  #   type: gitlab
+  #   # repo: group/project      (defaults to repo.gitlab)
+  #   # url: https://gitlab.example.com
+  #   labels: [ready-for-agent]
+  #   claim_label: loop:in-progress
+[[end]][[if .Jira]]
+  - name: jira
+    type: jira
+    url: https://my-org.atlassian.net
+    jql: project = ABC AND labels = agent AND statusCategory != Done
+    claim_label: loop-in-progress
+    transitions:
+      in_progress: In Progress
+      done: Done
+[[else]]
+  # - name: jira
+  #   type: jira
+  #   url: https://my-org.atlassian.net
+  #   jql: project = ABC AND labels = agent AND statusCategory != Done
+  #   claim_label: loop-in-progress
+  #   transitions:
+  #     in_progress: In Progress
+  #     done: Done
+[[end]]
+# Prompt templates (Go text/template). Omitted entries use the built-in
+# defaults, which improve with every loop release; "loop init --prompts"
+# writes editable copies to prompts/ and points these keys at them.
+[[if .Prompts]]prompts:
+  session: prompts/session.md
+  plan: prompts/plan.md
+  self_review: prompts/self-review.md
+  review: prompts/review.md
+  ci: prompts/ci.md
+  conflict: prompts/conflict.md
+  verify: prompts/verify.md
+[[else]]# prompts:
+#   session: prompts/session.md
+#   review: prompts/review.md
+#   ci: prompts/ci.md
+[[end]]
+agent:
+  runner: claude             # claude | cursor | codex | gemini | aider | opencode | copilot | amp | custom
+  # command: ./hooks/agent.sh  # custom: any script that reads $LOOP_PROMPT_FILE and commits
+  # args: ["--task", "{prompt_file}"]
+  # prompt_via: args           # stdin | args | both
+  # session_id: none           # uuid | none | run:<args> | json:<key>
+  # resume: "./hooks/agent.sh --continue {session}"
+  # model: claude-opus-5     # per-item override: "model:" line or frontmatter
+  permission_mode: acceptEdits # or bypassPermissions to skip all checks
+  # Permission rules written to <workdir>/.claude/settings.local.json. The
+  # defaults allow git add/commit and deny git push; add your own commands.
+[[if .Allow]]  allow:
+[[range .Allow]]    - "[[.]]"
+[[end]][[else]]  # allow:
+  #   - "Bash(git status:*)"
+  #   - "Bash(git add:*)"
+  #   - "Bash(git commit:*)"
+  #   - "Bash(npm test:*)"
+[[end]]  timeout: 45m
+  max_turns: 200
+  attempts: 2                # retries for the initial session
+  # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN, GITLAB_TOKEN or JIRA_*
+  # skills:                  # folders symlinked into <workdir>/.claude/skills
+  #   - ~/skills/my-team-conventions
+
+# Steps run inside the workdir. Each is one of:
+#   run: <shell command>        script: <file relative to loop.yaml>        agent: <prompt template>
+# Scripts see LOOP_PROJECT_DIR, LOOP_WORKDIR, LOOP_BRANCH, LOOP_BASE, LOOP_ITEM_ID,
+# LOOP_ITEM_TITLE, LOOP_RUN_ID, LOOP_RUN_DIR and LOOP_SUMMARY_FILE.
+steps:
+  setup: []                  # after checkout, before the session
+    # - run: npm ci
+    # - script: hooks/setup.sh   # e.g. copy a .env into the workdir
+[[if .Test]]  verify:                    # after the session; a failing run/script step starts a fix session
+    - name: tests
+      run: [[.Test]]
+[[else]]  verify: []                 # after the session; a failing run/script step starts a fix session
+    # - name: tests
+    #   run: npm test
+[[end]]    # - name: self-review
+    #   agent: prompts/self-review.md
+  before_pr: []              # after verify, before the push
+  merged: []                 # after the PR merged
+  cleanup: []                # before the workdir is removed
+  blocked: []                # run parked and needs a human (LOOP_RUN_ERROR says why)
+  failed: []                 # run failed; good place for a Slack or mail notification
+
+pr:
+  draft: true                # opened as draft, marked ready once CI is green
+  title: "{{ .Item.Title }}"
+  [[if .Prompts]]body: prompts/pr-body.md[[else]]# body: prompts/pr-body.md[[end]]
+  reviewers: []
+  labels: []
+  link_issue: true           # "Closes #n" for GitHub and GitLab issues
+
+# budget:                    # zero or absent means no cap
+#   run_cost: 5              # USD per run (harnesses that report cost)
+#   run_time: 2h             # agent session time per run
+#   daily_cost: 40
+#   daily_runs: 10
+
+workflow:
+  poll_interval: 60s
+  fix_rounds: 3              # review/CI fix sessions per run
+  conflict_attempts: 1
+  merge: manual              # manual | when-green | when-green-and-approved | auto-merge
+  merge_method: squash
+  delete_branch: true
+  close_issue_on_merge: true # item is done only when the ticket is closed
+  plan: false                # planning session first; the plan is posted on the ticket
+  self_review: false         # a second session reviews the diff before the PR opens
+  gates: []                  # before-code, before-pr, before-fix, before-merge (loop approve <run>)
+  on_human_push: pause       # pause: park when a person pushes to the branch | continue
+  ci_rerun: true             # re-run failed Actions jobs once before a CI fix round
+  pr_status: true            # post phase and outcome as a "loop" commit status on the PR
+  concurrency: 1

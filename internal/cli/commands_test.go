@@ -319,6 +319,36 @@ func TestInitDetectsToolchain(t *testing.T) {
 	}
 }
 
+func TestInitWritesShortConfigUnlessFull(t *testing.T) {
+	p := &project{dir: t.TempDir()}
+	short := filepath.Join(t.TempDir(), "short")
+	if _, err := execute(t, p, "init", "--source", "markdown", short); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(short, "loop.yaml"))
+	if n := strings.Count(string(b), "\n"); n > 30 || strings.Contains(string(b), "workdir: worktree") || !strings.Contains(string(b), "loop init --full") {
+		t.Errorf("the default loop.yaml must be short and point at --full (%d lines):\n%s", n, b)
+	}
+	if !strings.Contains(string(b), "merge: manual") || strings.Contains(string(b), "base: main") {
+		t.Errorf("the short loop.yaml keeps the merge knob and omits the default base:\n%s", b)
+	}
+	cfg := loadConfig(t, &project{dir: short})
+	if cfg.Repo.Base != "main" || cfg.Workflow.Merge != "manual" || cfg.Sources[0].Path != "backlog" || !cfg.Sources[0].Claim {
+		t.Errorf("defaults must fill the gaps: %+v", cfg.Repo)
+	}
+	full := filepath.Join(t.TempDir(), "full")
+	if _, err := execute(t, p, "init", "--full", "--source", "markdown", full); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(full, "loop.yaml"))
+	if !strings.Contains(string(b), "workdir: worktree") || !strings.Contains(string(b), "# Steps run inside the workdir") || !strings.Contains(string(b), "ci_rerun: true") {
+		t.Errorf("--full must write the annotated loop.yaml:\n%s", b)
+	}
+	if cfg := loadConfig(t, &project{dir: full}); cfg.Workflow.Merge != "manual" || len(cfg.Sources) != 1 {
+		t.Errorf("the full loop.yaml must load with the same decisions: %+v", cfg.Sources)
+	}
+}
+
 func TestInitRunsDoctorWhenTheRepositoryIsKnown(t *testing.T) {
 	// A local bare remote as origin: detected, but no host can be derived,
 	// so the doctor's configuration check fails and init says so.
@@ -464,8 +494,8 @@ func TestInitDetectsRepositoryFromCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, _ = os.ReadFile(filepath.Join(dir2, "loop.yaml"))
-	if !strings.Contains(string(cfg), "name: tool\n") || !strings.Contains(string(cfg), "url: https://gitlab.example.com/g/sub/tool.git") || !strings.Contains(string(cfg), "base: main\n") {
-		t.Errorf("--repo: %s", cfg)
+	if !strings.Contains(string(cfg), "name: tool\n") || !strings.Contains(string(cfg), "url: https://gitlab.example.com/g/sub/tool.git") || strings.Contains(string(cfg), "base:") {
+		t.Errorf("--repo (the default base is left out): %s", cfg)
 	}
 
 	// Outside any checkout: placeholders, the folder name as project name.
