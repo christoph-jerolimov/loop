@@ -117,6 +117,11 @@ with push access does the same. Anything the plan session leaves in the
 worktree is discarded before the implementation starts. The gate works
 without the plan too: it then simply holds the run before the session.
 
+A repository that uses OpenSpec already has a planning artefact, the
+change proposal. The [OpenSpec session template](prompts.md#spec-driven-development-with-openspec)
+writes it in the implementation session, together with the code and the
+archived change, so `workflow.plan` is not needed there.
+
 ## Self-review before the PR
 
 With `workflow.self_review: true` a second session reviews the branch

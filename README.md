@@ -211,6 +211,9 @@ The same pages are published as a website built from the `website/` folder
   [with](docs/examples/session-with-comments.md) and
   [without](docs/examples/session-without-comments.md) ticket comments
 - [Workflow, gates and merge policies](docs/workflow.md)
+- [Spec-driven development with OpenSpec](docs/prompts.md#spec-driven-development-with-openspec):
+  a session template that [proposes, implements and archives](docs/examples/session-openspec.md)
+  an OpenSpec change in one run
 
 ## Development
 
