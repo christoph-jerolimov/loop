@@ -105,10 +105,12 @@ agent:
 
 # Steps run inside the workdir. Each is one of:
 #   run: <shell command>        script: <file relative to loop.yaml>        agent: <prompt template>
+# Scripts see LOOP_PROJECT_DIR, LOOP_WORKDIR, LOOP_BRANCH, LOOP_BASE, LOOP_ITEM_ID,
+# LOOP_ITEM_TITLE, LOOP_RUN_ID, LOOP_RUN_DIR and LOOP_SUMMARY_FILE.
 steps:
-  setup:                     # after checkout, before the session
-    - script: hooks/setup.sh
+  setup: []                  # after checkout, before the session
     # - run: npm ci
+    # - script: hooks/setup.sh   # e.g. copy a .env into the workdir
   verify: []                 # after the session; a failing run/script step starts a fix session
     # - name: tests
     #   run: npm test

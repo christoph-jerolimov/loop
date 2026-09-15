@@ -220,18 +220,20 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	for _, f := range []string{"loop.yaml", "backlog/example.md", ".gitignore", "hooks/setup.sh"} {
-		info, err := os.Stat(filepath.Join(dir, f))
-		if err != nil {
+	for _, f := range []string{"loop.yaml", "backlog/example.md", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s not created: %v", f, err)
 			continue
-		}
-		if strings.HasSuffix(f, ".sh") && info.Mode()&0o111 == 0 {
-			t.Errorf("%s must be executable", f)
 		}
 		if !strings.Contains(out, "created "+filepath.Join(dir, f)) {
 			t.Errorf("output does not mention %s", f)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "hooks")); !os.IsNotExist(err) {
+		t.Error("no hooks folder: an empty setup script would run on every checkout for nothing")
+	}
+	if cfg := loadConfig(t, &project{dir: dir}); len(cfg.Steps.Setup) != 0 {
+		t.Errorf("steps.setup must be empty by default: %+v", cfg.Steps.Setup)
 	}
 	if !strings.Contains(out, "Next steps:") {
 		t.Errorf("no next steps:\n%s", out)
