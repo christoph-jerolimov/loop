@@ -18,6 +18,12 @@ Scaffold a project: `loop.yaml`, `prompts/` with the built-in templates,
 `backlog/example.md`, `hooks/setup.sh` and a `.gitignore` for `.loop/`.
 Existing files are kept unless `--force` is given.
 
+The target repository is filled in from `--repo <url>`, or from the
+`origin` remote of the git checkout that `dir` or the current folder (`-C`)
+is part of; the base branch comes from that remote's HEAD and the project
+name from the repository name. Run it next to or inside your checkout and
+`loop.yaml` needs no edit before `loop doctor`.
+
 ## `loop doctor`
 
 Run every check a run depends on, before any worktree is created:

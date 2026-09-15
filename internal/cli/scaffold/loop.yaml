@@ -1,10 +1,10 @@
 # loop project configuration. See docs/configuration.md for every option.
-name: my-service
+name: [[.Name]]
 
 repo:
-  url: git@github.com:my-org/my-service.git   # github.com or gitlab URLs are recognised
+  url: [[.URL]]   # github.com or gitlab URLs are recognised
   # github: my-org/my-service   (derived from url; or gitlab: group/project + gitlab_url)
-  base: main
+  base: [[.Base]]
   workdir: worktree          # worktree (default, fast) or clone
   branch_prefix: loop/
 

@@ -253,6 +253,57 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	}
 }
 
+func TestInitDetectsRepositoryFromCheckout(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "widgets")
+	os.MkdirAll(repo, 0o755)
+	git(t, repo, "init", "-q")
+	git(t, repo, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+	git(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+
+	// The project folder (-C) is the checkout; the loop project goes next to it.
+	dir := filepath.Join(root, "widgets-loop")
+	out, err := execute(t, &project{dir: repo}, "init", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	cfg, _ := os.ReadFile(filepath.Join(dir, "loop.yaml"))
+	for _, want := range []string{"name: widgets\n", "url: https://github.com/acme/widgets.git", "base: develop\n"} {
+		if !strings.Contains(string(cfg), want) {
+			t.Errorf("loop.yaml lacks %q:\n%s", want, cfg)
+		}
+	}
+	if !strings.Contains(out, "using   https://github.com/acme/widgets.git (origin of "+repo+")") || !strings.Contains(out, "check loop.yaml") {
+		t.Errorf("init should say what it detected:\n%s", out)
+	}
+	if loadConfig(t, &project{dir: dir}).Repo.GitHub != "acme/widgets" {
+		t.Error("the generated loop.yaml must load and derive the GitHub repository")
+	}
+
+	// --repo wins over the checkout; the name comes from the URL.
+	dir2 := filepath.Join(root, "other")
+	if _, err := execute(t, &project{dir: repo}, "init", "--repo", "https://gitlab.example.com/g/sub/tool.git", dir2); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = os.ReadFile(filepath.Join(dir2, "loop.yaml"))
+	if !strings.Contains(string(cfg), "name: tool\n") || !strings.Contains(string(cfg), "url: https://gitlab.example.com/g/sub/tool.git") || !strings.Contains(string(cfg), "base: main\n") {
+		t.Errorf("--repo: %s", cfg)
+	}
+
+	// Outside any checkout: placeholders, the folder name as project name.
+	dir3 := filepath.Join(root, "plain")
+	out, _ = execute(t, &project{dir: root}, "init", dir3)
+	cfg, _ = os.ReadFile(filepath.Join(dir3, "loop.yaml"))
+	if !strings.Contains(string(cfg), "name: plain\n") || !strings.Contains(string(cfg), "url: "+placeholderURL) || strings.Contains(out, "using   ") || !strings.Contains(out, "set repo.url") {
+		t.Errorf("without a checkout:\n%s\n%s", cfg, out)
+	}
+	for url, want := range map[string]string{"git@github.com:a/b.git": "b", "https://x/g/sub/c": "c", "/srv/git/d.git/": "d", "": ""} {
+		if got := repoName(url); got != want {
+			t.Errorf("repoName(%q) = %q, want %q", url, got, want)
+		}
+	}
+}
+
 func TestPrefixWriter(t *testing.T) {
 	var buf bytes.Buffer
 	w := &prefixWriter{prefix: "demo | ", w: &buf}
