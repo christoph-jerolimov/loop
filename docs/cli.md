@@ -18,6 +18,12 @@ Scaffold a project: `loop.yaml`, `backlog/example.md`, `hooks/setup.sh`
 and a `.gitignore` for `.loop/`. Existing files are kept unless `--force`
 is given.
 
+The backlog starts as a markdown folder. `--source github`, `gitlab` or
+`jira` (repeatable, or comma-separated) adds an issue source of that type;
+without the flag, a source for the repository's own host is added when its
+token is available (`GITHUB_TOKEN` or `gh auth login`, `GITLAB_TOKEN`), so
+`loop list` works right away and needs no token otherwise.
+
 Prompts use the built-in templates, which improve with every loop release.
 `--prompts` writes editable copies to `prompts/` and points `loop.yaml` at
 them; in an existing project it writes the copies and prints the keys to

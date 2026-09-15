@@ -12,7 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/christoph-jerolimov/loop/internal/config"
+	"github.com/christoph-jerolimov/loop/internal/ghapi"
 	"github.com/christoph-jerolimov/loop/internal/gitx"
+	"github.com/christoph-jerolimov/loop/internal/glapi"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
 )
 
@@ -23,6 +26,7 @@ var (
 	initForce   bool
 	initRepo    string
 	initPrompts bool
+	initSources []string
 )
 
 var initCmd = &cobra.Command{
@@ -36,7 +40,11 @@ that remote's HEAD. Without either, loop.yaml gets placeholders to edit.
 Prompts use the built-in templates unless --prompts is given, which
 writes editable copies to prompts/ and points loop.yaml at them. In an
 existing project --prompts only writes the files and prints the keys to
-add to loop.yaml.`,
+add to loop.yaml.
+
+The backlog starts as a markdown folder. --source github, gitlab or jira
+adds a source of that type; a source for the repository's own host is
+added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -50,6 +58,9 @@ add to loop.yaml.`,
 		det.Prompts = initPrompts
 		if det.From != "" {
 			fmt.Printf("using   %s (%s)\n", det.URL, det.From)
+		}
+		if err := det.chooseSources(initSources); err != nil {
+			return err
 		}
 		cfg, err := renderScaffold("scaffold/loop.yaml", det)
 		if err != nil {
@@ -120,6 +131,54 @@ type repoDetection struct {
 	From string
 	// Prompts points loop.yaml at copies of the templates in prompts/.
 	Prompts bool
+	// GitHub, GitLab and Jira enable the respective issue source.
+	GitHub, GitLab, Jira bool
+}
+
+// chooseSources enables the sources named with --source and, without
+// any, the issue source of the repository's host when its token is set.
+func (d *repoDetection) chooseSources(flags []string) error {
+	for _, s := range flags {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "github":
+			d.GitHub = true
+		case "gitlab":
+			d.GitLab = true
+		case "jira":
+			d.Jira = true
+		case "markdown", "":
+		default:
+			return fmt.Errorf("--source must be github, gitlab or jira, got %q", s)
+		}
+	}
+	if len(flags) > 0 {
+		return nil
+	}
+	host := detectHost(d.URL)
+	switch {
+	case host == config.HostGitHub && !d.GitHub:
+		if _, err := ghapi.Token(); err == nil {
+			d.GitHub = true
+			fmt.Println("adding  github issues source (a GitHub token is available)")
+		}
+	case host == config.HostGitLab && !d.GitLab:
+		if _, err := glapi.Token(); err == nil {
+			d.GitLab = true
+			fmt.Println("adding  gitlab issues source (GITLAB_TOKEN is set)")
+		}
+	}
+	return nil
+}
+
+// detectHost applies the config rules to a clone URL without loading a
+// config: github for github.com URLs, gitlab for hosts named gitlab.
+func detectHost(url string) string {
+	c := config.Config{Repo: config.Repo{URL: url}, Dir: "."}
+	c.ApplyDefaults()
+	if c.Repo.GitHub == "" && c.Repo.GitLab == "" {
+		return ""
+	}
+	return c.Repo.Host()
 }
 
 const placeholderURL = "git@github.com:my-org/my-service.git"
@@ -211,4 +270,5 @@ func init() {
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing files")
 	initCmd.Flags().StringVar(&initRepo, "repo", "", "clone URL of the target repository (default: origin of the surrounding git checkout)")
 	initCmd.Flags().BoolVar(&initPrompts, "prompts", false, "write editable copies of the prompt templates to prompts/ and point loop.yaml at them")
+	initCmd.Flags().StringSliceVar(&initSources, "source", nil, "issue sources to add besides the markdown backlog: github, gitlab, jira (default: the repository's host when its token is set)")
 }
