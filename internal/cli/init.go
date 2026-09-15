@@ -28,6 +28,7 @@ var (
 	initPrompts  bool
 	initSources  []string
 	initNoDoctor bool
+	initFull     bool
 )
 
 var initCmd = &cobra.Command{
@@ -53,7 +54,10 @@ its test command becomes the verify step and the session may run it.
 
 When the repository was detected, the doctor checks run at the end so
 the first loop run does not fail on a missing tool or token; --no-doctor
-skips them.`,
+skips them.
+
+loop.yaml holds only what init decided; every other option keeps its
+default. --full writes the annotated version with every option instead.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -75,7 +79,11 @@ skips them.`,
 		if det.Test != "" {
 			fmt.Printf("using   %q as verify step and allowing it in agent.allow (%s found)\n", det.Test, det.Marker)
 		}
-		cfg, err := renderScaffold("scaffold/loop.yaml", det)
+		tpl := "scaffold/loop.yaml"
+		if initFull {
+			tpl = "scaffold/loop-full.yaml"
+		}
+		cfg, err := renderScaffold(tpl, det)
 		if err != nil {
 			return err
 		}
@@ -367,4 +375,5 @@ func init() {
 	initCmd.Flags().BoolVar(&initPrompts, "prompts", false, "write editable copies of the prompt templates to prompts/ and point loop.yaml at them")
 	initCmd.Flags().StringSliceVar(&initSources, "source", nil, "issue sources to add besides the markdown backlog: github, gitlab, jira (default: the repository's host when its token is set)")
 	initCmd.Flags().BoolVar(&initNoDoctor, "no-doctor", false, "do not run the doctor checks after scaffolding")
+	initCmd.Flags().BoolVar(&initFull, "full", false, "write an annotated loop.yaml that lists every option")
 }
