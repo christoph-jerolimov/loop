@@ -17,6 +17,9 @@ func dryRun(a *app, it *item.Item, rd engine.Readiness) error {
 	branch := e.BranchFor(it)
 	fmt.Printf("dry run for %s  %s\n\n", it.ID, it.Title)
 	fmt.Printf("would start:   %s\n", startVerdict(it, rd))
+	if it.Recurring() {
+		fmt.Printf("schedule:      every %s; %s\n", it.Every, scheduleVerdict(rd))
+	}
 	fmt.Printf("branch:        %s (a taken name gets a -2, -3 suffix)\n", branch)
 	fmt.Printf("workdir:       %s (%s)\n", e.WorkdirFor(branch), cfg.Repo.Workdir)
 	fmt.Printf("base:          %s on %s%s\n", cfg.Repo.Base, cfg.Repo.URL, forkNote(cfg))
@@ -71,16 +74,33 @@ func dryRun(a *app, it *item.Item, rd engine.Readiness) error {
 
 func startVerdict(it *item.Item, rd engine.Readiness) string {
 	switch {
-	case rd.ActiveRun != nil:
+	case rd.ActiveRun != nil && rd.ActiveRun.Phase.Active():
 		return "no, run " + rd.ActiveRun.ID + " is active in phase " + string(rd.ActiveRun.Phase)
+	case rd.ActiveRun != nil:
+		return "no, run " + rd.ActiveRun.ID + " is " + string(rd.ActiveRun.Phase) + " with an open PR"
 	case it.Closed:
 		return "no, the item is closed"
+	case rd.ScheduleError != "":
+		return "no, " + rd.ScheduleError
 	case rd.InProgress:
 		return "only with --force, the item is marked in progress" + claimNote(it.ClaimedBy)
 	case len(rd.OpenDeps) > 0:
 		return "only with --force, it depends on open items: " + strings.Join(rd.OpenDeps, ", ")
 	}
 	return "yes"
+}
+
+// scheduleVerdict says where a recurring item is in its cycle.
+func scheduleVerdict(rd engine.Readiness) string {
+	switch {
+	case rd.ScheduleError != "":
+		return rd.ScheduleError
+	case rd.LastRun == nil:
+		return "never ran, due now; loop watch --pick would start it"
+	case rd.Due:
+		return fmt.Sprintf("last run %s, due since %s; loop watch --pick would start it", rd.LastRun.ID, rd.NextDue.Local().Format("2006-01-02 15:04"))
+	}
+	return fmt.Sprintf("last run %s, next due %s; loop run starts it anyway, loop watch --pick waits", rd.LastRun.ID, rd.NextDue.Local().Format("2006-01-02 15:04"))
 }
 
 func phaseLine(cfg *config.Config) string {

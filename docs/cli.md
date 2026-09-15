@@ -39,7 +39,7 @@ Run every check a run depends on, before any worktree is created:
 | Tools | `git` and the harness command (`claude`, `agent` for Cursor, `codex`, `gemini`, `aider`, `opencode`, `copilot`, `amp`, or the custom command) are on the `PATH`; for Claude a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
 | Repository | `repo.url` is reachable and has the base branch. |
 | Credentials | The GitHub or GitLab token is accepted, can push to the repository, and the default branch matches `repo.base` (warning otherwise). Jira credentials are accepted for every Jira site. |
-| Sources | Every source can be listed; the number of open items is shown, and for GitHub and GitLab sources whether ticket comments are loaded and why. |
+| Sources | Every source can be listed; the number of open items is shown, every `every:` schedule parses, and for GitHub and GitLab sources whether ticket comments are loaded and why. |
 | State | `.loop/` can be created. |
 
 Exits non-zero when any check fails. Run it after editing `loop.yaml` and
@@ -48,25 +48,30 @@ whenever a run fails early.
 ## `loop list`
 
 Open items in pick-up order (priority first, then source order, then
-oldest first) with a priority column and a status column: `ready`,
-`blocked by …`, `in progress` or `running (<phase>)`.
+oldest first) with a priority column, the schedule of recurring items
+(`EVERY`) and a status column: `ready`, `due <time>` (a recurring item
+whose interval has not passed), `blocked by …`, `in progress`,
+`running (<phase>)`, `blocked with open PR (<run>)` or `invalid schedule`.
 
 | Flag | Meaning |
 | --- | --- |
 | `-s, --source <name or type>` | Only one source. |
-| `--ready` | Only items that can be started now. |
-| `--json` | Machine-readable output including the readiness details. |
+| `--ready` | Only items the scheduler would start now: ready and, for recurring items, due. |
+| `--json` | Machine-readable output including the readiness details (`Due`, `NextDue`, `LastRun`). |
 
 ## `loop show <item> [--prompt]`
 
-Item details, or with `--prompt` the rendered session prompt exactly as an
+Item details, for a recurring item with its schedule, last run and next
+due time; or with `--prompt` the rendered session prompt exactly as an
 agent would receive it.
 
 ## `loop run <item>`
 
 Start a run for one item and drive it in the foreground until the ticket
 is closed. Items with open dependencies or an in-progress marker are
-refused unless `--force` is given. On a terminal, gates ask interactively.
+refused unless `--force` is given. A recurring item starts even when it is
+not due yet (a note says so): this is its manual trigger. On a terminal,
+gates ask interactively.
 
 While a session runs, every line the agent writes and every tool it calls
 is echoed with the run's item id in front: `agent:` lines carry the text,
@@ -92,15 +97,17 @@ transcript in `loop logs --session` is never coloured.
 | --- | --- |
 | `--force` | Ignore open dependencies and in-progress markers. |
 | `--no-watch` | Return once the PR is opened; monitor later with `loop watch`. |
-| `--dry-run` | Print what the run would do and stop: whether it would start (and why not), branch, workdir, base and fork, harness, model, attempts and timeout, the phase chain with gates, configured steps, PR and merge policy, budget caps, the PR title and the rendered plan and session prompts. Nothing is started, claimed or written. |
-| `--all` | Start every ready item in backlog order, respecting `workflow.concurrency`, and return when nothing is left. |
+| `--dry-run` | Print what the run would do and stop: whether it would start (and why not), the schedule and next due time of a recurring item, branch, workdir, base and fork, harness, model, attempts and timeout, the phase chain with gates, configured steps, PR and merge policy, budget caps, the PR title and the rendered plan and session prompts. Nothing is started, claimed or written. |
+| `--all` | Start every ready item in backlog order (recurring items only when due), respecting `workflow.concurrency`, and return when nothing is left. |
 | `-s, --source` | With `--all`: only items from this source. |
 
 ## `loop watch [--pick] [project-dir...]`
 
 The long-running worker: drives every active run (polls PRs, runs fix
 rounds, merges, closes, cleans up). With `--pick` it also starts ready
-backlog items whenever capacity is free. Given project folders, it watches
+backlog items whenever capacity is free, and recurring items whenever
+they are due, which makes it the scheduler for
+[recurring tasks](workflow.md#recurring-items). Given project folders, it watches
 all of them at once and prefixes output with the project name:
 `loop watch --pick ~/loops/*`.
 
@@ -109,8 +116,8 @@ whether it picks and how many items at a time), then a status line
 whenever the situation changes: the runs it works on, PRs waiting for
 their next poll and when that is, runs parked at a gate, and with
 `--pick` why nothing (more) was started (no open items, every item
-running, in progress or blocked, `workflow.concurrency` reached, budget
-reached). When there is nothing to do it says so once, with the interval
+running, in progress, blocked or recurring and not due yet,
+`workflow.concurrency` reached, budget reached). When there is nothing to do it says so once, with the interval
 it checks again in, and stays quiet until something changes:
 
 ```
@@ -125,7 +132,8 @@ error). `-a` includes finished runs.
 
 ## `loop stats [--json]`
 
-Every run in the project summarised: runs per phase, merged PRs, mean fix
+Every run in the project summarised: runs per phase, merged PRs, recurring
+runs that ended without changes, mean fix
 rounds per PR, sessions and agent time, cost in total and per merged PR
 (for harnesses that report it, Claude Code does), the mean time from
 start to done, and today's runs and spend against `budget`.

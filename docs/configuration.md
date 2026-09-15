@@ -1,7 +1,8 @@
 # Configuration reference (`loop.yaml`)
 
 Paths are relative to the folder containing `loop.yaml`. Durations use Go
-syntax (`45m`, `1h30m`, `90s`).
+syntax (`45m`, `1h30m`, `90s`) plus `d` for days and `w` for weeks (`2d`,
+`1w`).
 
 ## Top level
 
@@ -67,6 +68,27 @@ from:
 
 `loop list` shows the priority in its own column.
 
+### Recurring items
+
+An item with a schedule is picked up again and again instead of once:
+
+- markdown: an `every:` frontmatter key.
+- any source: a body line `every: 7d`, like `depends on:` and `model:`.
+
+The value is a duration in Go syntax extended with `d` (days) and `w`
+(weeks), for example `7d`, `2w`, `36h`, `1d12h`, or one of the words
+`hourly`, `daily`, `weekly`, `fortnightly`, `monthly` (30 days). Anything
+below a minute is rejected; `loop doctor` fails on a schedule that does
+not parse and `loop list` shows it as `invalid schedule`.
+
+A recurring item is due when the interval has passed since its previous
+run started, counted from `.loop/runs`; a run that failed counts too, so a
+broken task does not restart every tick. It is never closed: after the
+merge loop releases the claim, notes the merge and the next due time on
+the ticket, and the PR carries no `Closes #n`. A session without commits
+ends the run as `done` with outcome `no-changes` instead of failing. See
+[workflow](workflow.md#recurring-items) for the whole lifecycle.
+
 ### `type: markdown`
 
 | Key | Default | Description |
@@ -74,8 +96,8 @@ from:
 | `path` | `backlog` | Folder of `*.md` files. |
 
 Frontmatter keys: `id`, `title`, `status` (`open`, `in-progress`, `closed`),
-`created`, `labels`, `depends_on`, `model`, `loop_run`. Without a title the
-first `# heading` or the file name is used. Claiming writes
+`created`, `labels`, `depends_on`, `model`, `priority`, `every`,
+`loop_run`. Without a title the first `# heading` or the file name is used. Claiming writes
 `status: in-progress` and `loop_run`; closing writes `status: closed` and
 `closed_note`. These edits touch only the keys loop owns: every other key
 keeps its position, quoting and comments, and a file without frontmatter

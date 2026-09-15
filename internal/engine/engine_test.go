@@ -271,6 +271,10 @@ if [ -n "$LOOP_PLAN_FILE" ]; then
   echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"planned\",\"session_id\":\"$sid\",\"total_cost_usd\":0.5}"
   exit 0
 fi
+if [ -n "$FAKE_NO_CHANGES" ]; then
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"nothing to do\",\"session_id\":\"$sid\",\"total_cost_usd\":0.25}"
+  exit 0
+fi
 git config user.email a@t; git config user.name a
 echo "$prompt" >> feature.txt
 git add -A && git commit -qm "agent work"

@@ -38,6 +38,9 @@ type Engine struct {
 	Interactive bool
 	// Gate is called at a gate when Interactive; it returns true to proceed.
 	Gate func(r *state.Run, gate string) bool
+	// Now is the clock that decides when recurring items are due and stamps
+	// their branches; tests replace it.
+	Now func() time.Time
 
 	host     host.Host
 	hostOnce sync.Once
@@ -56,10 +59,20 @@ func New(cfg *config.Config, sources source.Set, out io.Writer) (*Engine, error)
 	if out == nil {
 		out = io.Discard
 	}
-	return &Engine{
+	e := &Engine{
 		Cfg: cfg, Sources: sources, Store: state.NewStore(cfg.StatePath()), Runner: runner, Out: out,
+		Now:   time.Now,
 		heavy: make(chan struct{}, cfg.Workflow.Concurrency),
-	}, nil
+	}
+	e.Store.Now = e.now
+	return e, nil
+}
+
+func (e *Engine) now() time.Time {
+	if e.Now == nil {
+		return time.Now()
+	}
+	return e.Now()
 }
 
 // Host returns the code host client for the target repository.
@@ -118,20 +131,52 @@ func shortID(r *state.Run) string {
 
 // Readiness explains whether an item can be started.
 type Readiness struct {
+	// Ready says the item can be started now by loop run. Whether it is
+	// also Due decides if loop watch --pick and loop run --all start it.
 	Ready      bool
 	InProgress bool
-	ActiveRun  *state.Run
-	OpenDeps   []string
-	DepErrors  []string
+	// ActiveRun is the run that occupies the item: an active one, or for
+	// a recurring item also a parked one whose PR is still open.
+	ActiveRun *state.Run
+	OpenDeps  []string
+	DepErrors []string
+
+	// Recurring items carry a schedule; the fields below are theirs.
+	Recurring bool
+	// Due is true for every one-shot item, and for a recurring item once
+	// its interval has passed since its last run started.
+	Due bool
+	// NextDue is when the recurring item is due again; zero when it never
+	// ran.
+	NextDue time.Time
+	// LastRun is the newest run of the recurring item, in any phase.
+	LastRun *state.Run
+	// ScheduleError is set when the item's every: value does not parse;
+	// such an item is never ready.
+	ScheduleError string
 }
 
-// Check evaluates dependencies and claims for an item.
+// Check evaluates dependencies, claims and the schedule for an item.
 func (e *Engine) Check(ctx context.Context, it *item.Item) Readiness {
-	rd := Readiness{}
+	rd := Readiness{Due: true}
 	if it.InProgress {
 		rd.InProgress = true
 	}
-	if r, _ := e.Store.ForItem(it.ID); r != nil {
+	if it.Recurring() {
+		rd.Recurring = true
+		interval, err := it.Interval()
+		if err != nil {
+			rd.ScheduleError = err.Error()
+		}
+		if r, _ := e.Store.OpenForItem(it.ID); r != nil {
+			rd.ActiveRun = r
+		}
+		if last, _ := e.Store.LastForItem(it.ID); last != nil {
+			rd.LastRun = last
+			rd.NextDue = last.Created.Add(interval)
+			rd.Due = !e.now().Before(rd.NextDue)
+		}
+	} else if r, _ := e.Store.ForItem(it.ID); r != nil {
 		rd.ActiveRun = r
 	}
 	for _, d := range e.Sources.Dependencies(ctx, it) {
@@ -142,19 +187,55 @@ func (e *Engine) Check(ctx context.Context, it *item.Item) Readiness {
 			rd.OpenDeps = append(rd.OpenDeps, d.Ref)
 		}
 	}
-	rd.Ready = !rd.InProgress && rd.ActiveRun == nil && len(rd.OpenDeps) == 0 && !it.Closed
+	rd.Ready = !rd.InProgress && rd.ActiveRun == nil && len(rd.OpenDeps) == 0 && !it.Closed && rd.ScheduleError == ""
 	return rd
 }
 
+// Pickable reports whether the scheduler would start the item now: ready
+// and, for a recurring item, due.
+func (rd Readiness) Pickable() bool { return rd.Ready && rd.Due }
+
+// Status describes the readiness for people: ready, due in 3d, blocked
+// by ..., in progress, running (<phase>), or invalid schedule.
+func (rd Readiness) Status(it *item.Item) string {
+	switch {
+	case rd.ActiveRun != nil:
+		if rd.ActiveRun.Phase.Active() {
+			return "running (" + string(rd.ActiveRun.Phase) + ")"
+		}
+		return string(rd.ActiveRun.Phase) + " with open PR (" + rd.ActiveRun.ID + ")"
+	case rd.InProgress:
+		if it != nil && it.ClaimedBy != "" {
+			return "in progress (" + it.ClaimedBy + ")"
+		}
+		return "in progress"
+	case len(rd.OpenDeps) > 0:
+		return "blocked by " + strings.Join(rd.OpenDeps, ", ")
+	case rd.ScheduleError != "":
+		return "invalid schedule: " + rd.ScheduleError
+	case !rd.Due:
+		return "due " + rd.NextDue.Local().Format("2006-01-02 15:04")
+	}
+	return "ready"
+}
+
 // Start creates a run for the item. With force, open dependencies and
-// in-progress markers are ignored (an existing active run never is).
+// in-progress markers are ignored (an existing active run never is). A
+// recurring item that is not due yet starts too: an explicit start is
+// the manual trigger.
 func (e *Engine) Start(ctx context.Context, it *item.Item, force bool) (*state.Run, error) {
 	rd := e.Check(ctx, it)
 	if rd.ActiveRun != nil {
-		return nil, fmt.Errorf("item %s already has active run %s (%s)", it.ID, rd.ActiveRun.ID, rd.ActiveRun.Phase)
+		if rd.ActiveRun.Phase.Active() {
+			return nil, fmt.Errorf("item %s already has active run %s (%s)", it.ID, rd.ActiveRun.ID, rd.ActiveRun.Phase)
+		}
+		return nil, fmt.Errorf("item %s has %s run %s with an open PR %s; resume or close it first", it.ID, rd.ActiveRun.Phase, rd.ActiveRun.ID, rd.ActiveRun.PR.URL)
 	}
 	if it.Closed {
 		return nil, fmt.Errorf("item %s is closed", it.ID)
+	}
+	if rd.ScheduleError != "" {
+		return nil, fmt.Errorf("item %s: %s", it.ID, rd.ScheduleError)
 	}
 	if err := e.checkStartBudget(); err != nil {
 		return nil, err
@@ -175,7 +256,11 @@ func (e *Engine) Start(ctx context.Context, it *item.Item, force bool) (*state.R
 	if r.Model == "" {
 		r.Model = e.Cfg.Agent.Model
 	}
-	e.logf(r, "run %s created for %q", r.ID, it.Title)
+	if it.Recurring() {
+		e.logf(r, "run %s created for %q (recurring, every %s)", r.ID, it.Title, it.Every)
+	} else {
+		e.logf(r, "run %s created for %q", r.ID, it.Title)
+	}
 	return r, e.Store.Save(r)
 }
 
@@ -373,9 +458,14 @@ func (e *Engine) ensureFork(ctx context.Context, repo string) error {
 }
 
 // BranchFor is the branch a run for the item gets, before any -2 suffix
-// that a taken name would add.
+// that a taken name would add. Recurring items get the date of the
+// occurrence appended, so every occurrence has its own branch.
 func (e *Engine) BranchFor(it *item.Item) string {
-	return e.Cfg.Repo.BranchPrefix + item.Slug(it.NativeID+"-"+it.Title, 60)
+	name := e.Cfg.Repo.BranchPrefix + item.Slug(it.NativeID+"-"+it.Title, 60)
+	if it.Recurring() {
+		name += "-" + e.now().Format("20060102")
+	}
+	return name
 }
 
 // WorkdirFor is the checkout folder for a branch.
@@ -654,6 +744,9 @@ func (e *Engine) data(r *state.Run) *prompt.Data {
 	if r.PR != nil {
 		d.PR = &prompt.PRRef{Number: r.PR.Number, URL: r.PR.URL}
 	}
+	if r.Item.Recurring() {
+		d.Previous = e.previous(r)
+	}
 	if b, err := os.ReadFile(r.SummaryFile()); err == nil {
 		d.Summary = strings.TrimSpace(string(b))
 	}
@@ -662,6 +755,29 @@ func (e *Engine) data(r *state.Run) *prompt.Data {
 		d.Plan = strings.TrimSpace(string(b))
 	}
 	return d
+}
+
+// previous describes the newest earlier run of the run's item, for the
+// session template of a recurring item; nil for the first occurrence.
+func (e *Engine) previous(r *state.Run) *prompt.PreviousRun {
+	all, err := e.Store.List()
+	if err != nil {
+		return nil
+	}
+	for _, p := range all {
+		if p.ItemID != r.ItemID || p.ID == r.ID || !p.Created.Before(r.Created) {
+			continue
+		}
+		out := &prompt.PreviousRun{RunID: p.ID, Phase: string(p.Phase), Outcome: string(p.Outcome), Started: p.Created, Error: p.Error}
+		if p.PR != nil {
+			out.PRURL = p.PR.URL
+		}
+		if b, err := os.ReadFile(p.SummaryFile()); err == nil {
+			out.Summary = strings.TrimSpace(string(b))
+		}
+		return out
+	}
+	return nil
 }
 
 // runAgent executes one agent session and records it on the run. extra
@@ -752,6 +868,11 @@ func (e *Engine) session(ctx context.Context, r *state.Run) error {
 		if err != nil {
 			return err
 		}
+		if n == 0 && r.Item.Recurring() {
+			// "Nothing to do this time" is a normal result of a recurring
+			// task, not a failed attempt: the run ends without a PR.
+			return e.finishWithoutChanges(ctx, r)
+		}
 		if n == 0 {
 			e.logf(r, "attempt %d produced no commits", r.Attempt)
 			continue
@@ -760,6 +881,29 @@ func (e *Engine) session(ctx context.Context, r *state.Run) error {
 		return nil
 	}
 	return fmt.Errorf("no usable result after %d attempt(s)", r.Attempt)
+}
+
+// finishWithoutChanges ends a recurring run whose session changed nothing:
+// the claim is released, the ticket gets a note, and the run goes to
+// cleanup with the no-changes outcome.
+func (e *Engine) finishWithoutChanges(ctx context.Context, r *state.Run) error {
+	r.Outcome = state.OutcomeNoChanges
+	e.logf(r, "session found nothing to change; ending without a PR")
+	if src := e.Sources.ByName(r.Item.Source); src != nil {
+		_ = src.Comment(ctx, r.Item, fmt.Sprintf("loop run `%s` found nothing to change.%s", r.ID, e.nextDueNote(r)))
+	}
+	e.release(ctx, r)
+	r.SetPhase(state.PhaseCleanup, "no changes")
+	return nil
+}
+
+// nextDueNote says when a recurring item runs again, for ticket notes.
+func (e *Engine) nextDueNote(r *state.Run) string {
+	interval, err := r.Item.Interval()
+	if err != nil || interval == 0 {
+		return ""
+	}
+	return " The next occurrence is due " + r.Created.Add(interval).Format("2006-01-02 15:04") + " (every " + r.Item.Every + ")."
 }
 
 func (e *Engine) commitLeftovers(ctx context.Context, r *state.Run, msg string) error {

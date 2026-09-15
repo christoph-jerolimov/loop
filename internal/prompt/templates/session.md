@@ -20,6 +20,14 @@ Labels: {{ join .Item.Labels ", " }}
 This plan was written before the implementation and approved; follow it unless the code proves it wrong, and say so in the summary if you deviate.
 
 {{ .Plan }}
+{{ end }}{{ if .Item.Every }}
+## Recurring task
+
+This task runs every {{ .Item.Every }}; each occurrence is a fresh run on a fresh branch. {{ if .Previous }}The previous occurrence (run `{{ .Previous.RunID }}`, {{ .Previous.Started.Format "2006-01-02" }}) ended with: {{ .Previous.Result }}.{{ if .Previous.Summary }} Its summary:
+
+{{ quote .Previous.Summary }}{{ end }}{{ else }}This is the first occurrence.{{ end }}
+
+If there is nothing to change this time, change nothing and leave the working tree clean: a run without commits ends as "no changes", not as a failure.
 {{ end }}
 ## Rules
 

@@ -388,6 +388,88 @@ func TestReportPrintsOutcome(t *testing.T) {
 	if !strings.Contains(parked, "run r1 parked in phase pr at gate before-pr (loop approve r1); continue with: loop watch") {
 		t.Errorf("parked report = %q", parked)
 	}
+	nothing := capture(&state.Run{ItemID: "backlog:weekly", Phase: state.PhaseDone, Outcome: state.OutcomeNoChanges})
+	if !strings.Contains(nothing, "backlog:weekly done (no changes, no PR)") {
+		t.Errorf("no-changes report = %q", nothing)
+	}
+}
+
+func TestRecurringItemsInListShowDryRunAndDoctor(t *testing.T) {
+	p := newProject(t)
+	os.WriteFile(filepath.Join(p.dir, "backlog", "weekly.md"), []byte("---\ntitle: Bump deps\ncreated: 2026-01-01\nevery: 7d\n---\nUpdate everything.\n"), 0o644)
+	out, err := execute(t, p, "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.Contains(lines[0], "EVERY") || !strings.Contains(lines[1], "backlog:weekly") || !strings.Contains(lines[1], "7d") || !strings.Contains(lines[1], "ready") {
+		t.Errorf("a recurring item that never ran is ready:\n%s", out)
+	}
+	out, _ = execute(t, p, "run", "--dry-run", "weekly.md")
+	if !strings.Contains(out, "would start:   yes") || !strings.Contains(out, "schedule:      every 7d; never ran, due now") || !strings.Contains(out, "This is the first occurrence.") {
+		t.Errorf("dry run before the first occurrence:\n%s", out)
+	}
+
+	// After a run it is not due for a week: listed, but not started by --pick.
+	done := newRun(t, p, "weekly", state.PhaseDone, func(r *state.Run) {
+		r.Outcome = state.OutcomeMerged
+		r.PR = &state.PR{Number: 9, Merged: true, URL: "https://github.com/o/r/pull/9"}
+	})
+	out, _ = execute(t, p, "list")
+	if !strings.Contains(out, "backlog:weekly") || !strings.Contains(out, "due "+done.Created.Add(7*24*time.Hour).Local().Format("2006-01-02")) {
+		t.Errorf("list must say when the item is due:\n%s", out)
+	}
+	out, _ = execute(t, p, "list", "--ready")
+	if strings.Contains(out, "backlog:weekly") {
+		t.Errorf("--ready must hide an item that is not due:\n%s", out)
+	}
+	out, _ = execute(t, p, "list", "--json")
+	if !strings.Contains(out, `"every": "7d"`) || !strings.Contains(out, `"Recurring": true`) || !strings.Contains(out, `"Due": false`) {
+		t.Errorf("json lacks the schedule:\n%s", out)
+	}
+	out, _ = execute(t, p, "show", "weekly.md")
+	for _, want := range []string{"every:      7d", "last run:   " + done.ID + " (done, merged)", "next due:   " + done.Created.Add(7*24*time.Hour).Local().Format("2006-01-02")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show lacks %q:\n%s", want, out)
+		}
+	}
+	out, _ = execute(t, p, "run", "--dry-run", "weekly.md")
+	if !strings.Contains(out, "would start:   yes") || !strings.Contains(out, "schedule:      every 7d; last run "+done.ID+", next due ") || !strings.Contains(out, "loop run starts it anyway") {
+		t.Errorf("dry run while not due:\n%s", out)
+	}
+	out, err = execute(t, p, "doctor")
+	if err != nil || !strings.Contains(out, "source backlog: 1 recurring item(s) with a valid schedule") {
+		t.Errorf("doctor must count recurring items: %v\n%s", err, out)
+	}
+	out, _ = execute(t, p, "stats")
+	if !strings.Contains(out, "merged PRs:      1") || strings.Contains(out, "no changes:") {
+		t.Errorf("stats without no-change runs:\n%s", out)
+	}
+	newRun(t, p, "weekly-skip", state.PhaseDone, func(r *state.Run) { r.Outcome = state.OutcomeNoChanges })
+	out, _ = execute(t, p, "stats")
+	if !strings.Contains(out, "no changes:      1 recurring run(s) without a PR") {
+		t.Errorf("stats must count no-change runs:\n%s", out)
+	}
+
+	// A schedule that does not parse is reported everywhere and never started.
+	os.WriteFile(filepath.Join(p.dir, "backlog", "soon.md"), []byte("---\ntitle: Soon\nevery: soon\n---\nx\n"), 0o644)
+	out, _ = execute(t, p, "list")
+	if !strings.Contains(out, "invalid schedule: invalid interval \"soon\"") {
+		t.Errorf("list must flag the bad schedule:\n%s", out)
+	}
+	out, err = execute(t, p, "doctor")
+	if err == nil || !strings.Contains(out, "FAIL  source backlog: item backlog:soon: invalid interval \"soon\"") {
+		t.Errorf("doctor must fail on a bad schedule: %v\n%s", err, out)
+	}
+	if _, err := execute(t, p, "run", "--force", "soon.md"); err == nil || !strings.Contains(err.Error(), "invalid interval") {
+		t.Errorf("run must refuse a bad schedule even with --force, got %v", err)
+	}
+	// A one-shot item cannot depend on a recurring one.
+	os.WriteFile(filepath.Join(p.dir, "backlog", "after.md"), []byte("---\ntitle: After\n---\nDepends on: weekly.md\n"), 0o644)
+	out, _ = execute(t, p, "list")
+	if !strings.Contains(out, "blocked by weekly.md") {
+		t.Errorf("a dependency on a recurring item blocks forever:\n%s", out)
+	}
 }
 
 // captureStdout runs fn with os.Stdout redirected and returns what it printed.

@@ -55,6 +55,14 @@ func TestCreateSaveLoadRoundTrip(t *testing.T) {
 	if _, err := s.Load("missing"); err == nil {
 		t.Error("loading an unknown run must fail")
 	}
+	// A second run of the same item within the same second keeps its own folder.
+	again := create(t, s, "auth")
+	if again.ID == r.ID || !strings.HasPrefix(again.ID, r.ID) || again.Dir() == r.Dir() {
+		t.Errorf("second run id = %q, want %q with a suffix", again.ID, r.ID)
+	}
+	if got, err := s.Load(r.ID); err != nil || got.Branch != "loop/auth" {
+		t.Errorf("the first run must be untouched: %v %v", got, err)
+	}
 }
 
 func TestSaveWithoutDirUsesStoreLayout(t *testing.T) {
@@ -107,6 +115,31 @@ func TestListActiveForItemAndFind(t *testing.T) {
 	if r, _ := s.ForItem("backlog:auth"); r != nil {
 		t.Errorf("ForItem must ignore finished runs, got %s", r.ID)
 	}
+	if r, _ := s.LastForItem("backlog:auth"); r == nil || r.ID != older.ID {
+		t.Errorf("LastForItem must return finished runs too, got %v", r)
+	}
+	if r, _ := s.LastForItem("backlog:none"); r != nil {
+		t.Errorf("LastForItem(none) = %v", r)
+	}
+	// A parked run whose PR is still open occupies the item; a done run or
+	// a run whose PR was closed does not.
+	if r, _ := s.OpenForItem("backlog:auth"); r != nil {
+		t.Errorf("OpenForItem must ignore done runs, got %s", r.ID)
+	}
+	newer.Phase = PhaseBlocked
+	newer.PR = &PR{Number: 4}
+	s.Save(newer)
+	if r, _ := s.OpenForItem("backlog:search"); r == nil || r.ID != newer.ID {
+		t.Errorf("OpenForItem must return a blocked run with an open PR, got %v", r)
+	}
+	newer.PR.Closed = true
+	s.Save(newer)
+	if r, _ := s.OpenForItem("backlog:search"); r != nil {
+		t.Errorf("OpenForItem must ignore a blocked run whose PR was closed, got %s", r.ID)
+	}
+	newer.Phase = PhaseMonitor
+	newer.PR = nil
+	s.Save(newer)
 
 	cases := map[string]string{
 		newer.ID:       newer.ID,

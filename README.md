@@ -118,7 +118,8 @@ git-ignored.
    `/loop approve` on the PR.
 10. **Close.** The item is done when the ticket is closed. loop closes it
    after the merge (or the host does through the closing keyword), then removes
-   the worktree and the remote branch.
+   the worktree and the remote branch. A [recurring item](#recurring-tasks)
+   stays open and is picked up again when it is due.
 
 Every step is idempotent and persisted in `.loop/runs/<run>/run.yaml`, so a
 crashed `loop watch` simply continues where it stopped. Runs that exhaust
@@ -135,7 +136,7 @@ what it did spend.
 | --- | --- |
 | `loop init [dir]` | Scaffold a project. |
 | `loop doctor` | Check config, tools, credentials, repository and sources before running. |
-| `loop list [-s source] [--ready] [--json]` | Open items in pick-up order with status. |
+| `loop list [-s source] [--ready] [--json]` | Open items in pick-up order with schedule and status. |
 | `loop show <item> [--prompt]` | Item details, or the rendered session prompt. |
 | `loop run <item> [--force] [--no-watch] [--dry-run]` | Run one item to completion; `--dry-run` only prints what it would do. |
 | `loop run --all [-s source]` | Run every ready item, respecting `workflow.concurrency`. |
@@ -164,6 +165,36 @@ Markdown items can also use `depends_on:` in the frontmatter, and Jira
 "is blocked by" / "depends on" links are honoured. References may cross
 sources. An item is blocked until every referenced item is closed; `loop run
 --force` overrides that and the in-progress check.
+
+## Recurring tasks
+
+An item with an `every:` line runs on a schedule instead of once: a weekly
+dependency bump, a nightly lint sweep, a monthly docs check.
+
+```
+---
+title: Bump dependencies
+every: 7d
+---
+Update every dependency to its latest compatible version and run the tests.
+```
+
+The same line works in the body of a GitHub, GitLab or Jira ticket, so a
+pinned issue can be the home of a recurring task and collect its history
+as comments. Intervals are `7d`, `2w`, `36h`, or `hourly`, `daily`,
+`weekly`, `fortnightly`, `monthly`.
+
+Every occurrence is an ordinary run: fresh branch (with the date in its
+name), session, verify, PR, monitor, merge. What differs is the end: the
+ticket is not closed and not linked with `Closes #n`; loop notes the merge
+and the next due time on it instead. A session that finds nothing to
+change ends the run as done without a PR ("no changes"), not as a failure.
+`loop watch --pick` and `loop run --all` start a recurring item once its
+interval has passed since the previous run started; `loop run <item>`
+starts it at any time. While a previous occurrence is still running, or
+parked with its PR open, the next one waits. Nothing can `depends on:` a
+recurring item, because it never closes. See
+[workflow](docs/workflow.md#recurring-items).
 
 ## Documentation
 

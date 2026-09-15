@@ -108,7 +108,8 @@ func (e *Engine) openPR(ctx context.Context, r *state.Run) (bool, error) {
 // closingKeyword links the PR to an issue on the same host so merging
 // closes it.
 func (e *Engine) closingKeyword(r *state.Run) string {
-	if !*e.Cfg.PR.LinkIssue || r.Item.SourceType != e.Cfg.Repo.Host() {
+	// A recurring item outlives every one of its PRs.
+	if !*e.Cfg.PR.LinkIssue || r.Item.SourceType != e.Cfg.Repo.Host() || r.Item.Recurring() {
 		return ""
 	}
 	repo := r.Item.Extra["repo"]
@@ -291,6 +292,7 @@ func (e *Engine) monitor(ctx context.Context, r *state.Run) (bool, error) {
 		return false, nil
 	}
 	if pr.State == "closed" {
+		r.PR.Closed = true
 		e.release(ctx, r)
 		e.block(ctx, r, "PR was closed without merging")
 		return false, nil
@@ -635,6 +637,14 @@ func (e *Engine) closeItem(ctx context.Context, r *state.Run) (bool, error) {
 		r.SetPhase(state.PhaseCleanup, "source gone")
 		return false, nil
 	}
+	if r.Item.Recurring() {
+		// The item stays open for the next occurrence: only the claim is
+		// released, and the ticket learns when that is.
+		_ = src.Comment(ctx, r.Item, fmt.Sprintf("Merged %s (loop run `%s`).%s", r.PR.URL, r.ID, e.nextDueNote(r)))
+		e.release(ctx, r)
+		r.SetPhase(state.PhaseCleanup, "recurring item stays open")
+		return false, nil
+	}
 	cur, err := src.Get(ctx, r.Item.NativeID)
 	if err != nil {
 		e.logf(r, "reload item: %v", err)
@@ -680,8 +690,15 @@ func (e *Engine) cleanup(ctx context.Context, r *state.Run) error {
 			}
 		}
 	}
-	r.SetPhase(state.PhaseDone, "")
-	e.okf(r, "done")
+	if r.Outcome == "" && r.PR != nil && r.PR.Merged {
+		r.Outcome = state.OutcomeMerged
+	}
+	r.SetPhase(state.PhaseDone, string(r.Outcome))
+	if r.Outcome == state.OutcomeNoChanges {
+		e.okf(r, "done (no changes)")
+	} else {
+		e.okf(r, "done")
+	}
 	return nil
 }
 

@@ -91,9 +91,14 @@ func (s Set) Dependencies(ctx context.Context, it *item.Item) []Dependency {
 	for _, ref := range it.DependsOn {
 		d := Dependency{Ref: ref}
 		dep, err := s.Resolve(ctx, ref)
-		if err != nil {
+		switch {
+		case err != nil:
 			d.Err = err
-		} else {
+		case dep.Recurring():
+			// A recurring item is never closed, so nothing can wait for it.
+			d.Item = dep
+			d.Err = fmt.Errorf("%s is a recurring item (every %s) and never closes", dep.ID, dep.Every)
+		default:
 			d.Item = dep
 			d.Closed = dep.Closed
 		}

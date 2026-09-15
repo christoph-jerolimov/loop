@@ -3,6 +3,7 @@
 package item
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -47,6 +48,10 @@ type Item struct {
 	// Priority orders items ahead of source order and age: 1 is the
 	// highest, 0 means none. See ParsePriority for the accepted spellings.
 	Priority int `json:"priority,omitempty" yaml:"priority,omitempty"`
+	// Every makes the item recurring: it is picked again once this interval
+	// has passed since its previous run started, and it is never closed.
+	// Kept as the author wrote it ("7d", "weekly"); see ParseInterval.
+	Every string `json:"every,omitempty" yaml:"every,omitempty"`
 	// Extra carries source-specific values, e.g. the GitHub node id.
 	Extra map[string]string `json:"extra,omitempty" yaml:"extra,omitempty"`
 }
@@ -58,6 +63,7 @@ var (
 	dependsRe = regexp.MustCompile(`(?im)^\s*depends[ -]on:\s*(.+?)\s*$`)
 	modelRe   = regexp.MustCompile(`(?im)^\s*model:\s*(\S+)\s*$`)
 	prioRe    = regexp.MustCompile(`(?im)^\s*prio(?:rity)?:\s*(\S+)\s*$`)
+	everyRe   = regexp.MustCompile(`(?im)^\s*every:\s*(\S+)\s*$`)
 	labelRe   = regexp.MustCompile(`(?i)^prio(?:rity)?\s*[:/=-]\s*(.+)$`)
 	splitRe   = regexp.MustCompile(`[,\s]+`)
 )
@@ -91,6 +97,115 @@ func (it *Item) ApplyBodyDirectives() {
 			it.Priority = ParsePriority(m[1])
 		}
 	}
+	if it.Every == "" {
+		if m := everyRe.FindStringSubmatch(it.Body); m != nil {
+			it.Every = m[1]
+		}
+	}
+}
+
+// Recurring reports whether the item runs on a schedule instead of once.
+func (it *Item) Recurring() bool { return it.Every != "" }
+
+// Interval is the parsed schedule of a recurring item; zero for a one-shot
+// item, an error when Every is not a valid interval.
+func (it *Item) Interval() (time.Duration, error) {
+	if it.Every == "" {
+		return 0, nil
+	}
+	return ParseInterval(it.Every)
+}
+
+// ParseInterval turns a schedule spelling into a duration: the words
+// hourly, daily, weekly, fortnightly and monthly (30 days), or a duration
+// with the Go units plus d (days) and w (weeks), such as 7d, 2w or 1d12h.
+// Intervals shorter than a minute are rejected.
+func ParseInterval(s string) (time.Duration, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "hourly":
+		return time.Hour, nil
+	case "daily":
+		return 24 * time.Hour, nil
+	case "weekly":
+		return 7 * 24 * time.Hour, nil
+	case "fortnightly":
+		return 14 * 24 * time.Hour, nil
+	case "monthly":
+		return 30 * 24 * time.Hour, nil
+	}
+	d, err := ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid interval %q: use a duration such as 7d, 2w or 36h, or hourly, daily, weekly, fortnightly, monthly", s)
+	}
+	if d < time.Minute {
+		return 0, fmt.Errorf("invalid interval %q: must be at least 1m", s)
+	}
+	return d, nil
+}
+
+var dayWeekRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)([dw])`)
+
+// ParseDuration is time.ParseDuration extended with d (days) and w (weeks)
+// units, which may only lead the string: 7d, 2w, 1d12h, 1w2d.
+func ParseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	var total time.Duration
+	rest := s
+	for {
+		m := dayWeekRe.FindStringSubmatch(rest)
+		if m == nil {
+			break
+		}
+		n, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid duration %q", s)
+		}
+		unit := 24 * time.Hour
+		if m[2] == "w" {
+			unit = 7 * 24 * time.Hour
+		}
+		total += time.Duration(n * float64(unit))
+		rest = rest[len(m[0]):]
+	}
+	if rest == "" {
+		if total == 0 {
+			return 0, fmt.Errorf("invalid duration %q", s)
+		}
+		return total, nil
+	}
+	d, err := time.ParseDuration(rest)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q", s)
+	}
+	return total + d, nil
+}
+
+// FormatInterval renders a duration for people: whole weeks and days
+// where they fit (7d, 2w, 1d12h), Go syntax below a day.
+func FormatInterval(d time.Duration) string {
+	if d <= 0 {
+		return "0s"
+	}
+	const day = 24 * time.Hour
+	var b strings.Builder
+	if d >= 7*day && d%(7*day) == 0 {
+		return fmt.Sprintf("%dw", d/(7*day))
+	}
+	if d >= day {
+		fmt.Fprintf(&b, "%dd", d/day)
+		d %= day
+	}
+	if d > 0 {
+		s := d.String()
+		// Drop trailing zero units: 1h30m0s -> 1h30m, 12h0m0s -> 12h.
+		for _, z := range []string{"0s", "0m"} {
+			if strings.HasSuffix(s, z) && len(s) > len(z) && !isDigit(s[len(s)-len(z)-1]) {
+				s = strings.TrimSuffix(s, z)
+			}
+		}
+		b.WriteString(s)
+	}
+	return b.String()
 }
 
 // ParsePriority turns a priority spelling into a rank: 1 is the highest.
@@ -148,6 +263,8 @@ func PriorityName(p int) string {
 	}
 	return strconv.Itoa(p)
 }
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 func priorityRank(p int) int {
 	if p == 0 {
