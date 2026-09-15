@@ -14,9 +14,9 @@ Prints the release version (`dev` for source builds without `make`).
 
 ## `loop init [dir]`
 
-Scaffold a project: `loop.yaml`, `backlog/example.md`, `hooks/setup.sh`
-and a `.gitignore` for `.loop/`. Existing files are kept unless `--force`
-is given.
+Scaffold a project: `loop.yaml`, `backlog/example.md` and a `.gitignore`
+for `.loop/`. Existing files are kept unless `--force` is given. Steps are
+empty; `loop.yaml` shows where a setup command or script goes.
 
 The backlog starts as a markdown folder. `--source github`, `gitlab` or
 `jira` (repeatable, or comma-separated) adds an issue source of that type;

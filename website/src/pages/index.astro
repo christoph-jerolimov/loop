@@ -23,7 +23,7 @@ agent:
   allow: ["Bash(npm test:*)"]   # what a headless session may run
 steps:
   setup:
-    - script: hooks/setup.sh
+    - run: npm ci
   verify:
     - run: npm test
 workflow:

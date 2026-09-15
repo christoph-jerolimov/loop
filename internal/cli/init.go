@@ -31,7 +31,7 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init [dir]",
-	Short: "Create a loop project: loop.yaml, backlog/, hooks/ and .gitignore",
+	Short: "Create a loop project: loop.yaml, backlog/ and .gitignore",
 	Long: `Creates a loop project in dir (default: the current folder). The target
 repository is taken from --repo, or from the origin remote of the git
 checkout that dir or the current folder is part of; the base branch from
@@ -73,7 +73,6 @@ added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.`,
 		files := map[string]string{
 			"backlog/example.md": "scaffold/example.md",
 			".gitignore":         "scaffold/gitignore",
-			"hooks/setup.sh":     "scaffold/setup-hook.sh",
 		}
 		for dst, src := range files {
 			b, err := scaffold.ReadFile(src)

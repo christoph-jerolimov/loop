@@ -48,7 +48,7 @@ default); add your test command there, see
 
 ```sh
 mkdir my-service-loop && cd my-service-loop
-loop init                 # loop.yaml (repo taken from the surrounding checkout or --repo), backlog/
+loop init                 # loop.yaml (repo taken from the surrounding checkout or --repo), backlog/, .gitignore
 $EDITOR loop.yaml         # check repository and sources
 loop doctor               # config, tools, tokens and sources all good?
 $EDITOR backlog/login.md  # write an idea
