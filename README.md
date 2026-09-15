@@ -47,8 +47,8 @@ default); add your test command there, see
 ## Quick start
 
 ```sh
-mkdir my-service-loop && cd my-service-loop
-loop init                 # loop.yaml from the surrounding checkout (or --repo), backlog/, then the doctor checks
+cd my-service             # your checkout, or an empty folder next to it
+loop init                 # loop.yaml from the checkout (or --repo), backlog/, then the doctor checks
 $EDITOR backlog/login.md  # write an idea
 loop list                 # items in pick-up order, with blockers
 loop run login.md         # one item end to end
@@ -56,11 +56,13 @@ loop run --all            # every ready item, in order
 loop watch                # keep driving open PRs (reviews, CI, merge)
 ```
 
-A loop project is a folder with a `loop.yaml`. Commit it: it is the home of
-your backlog, prompt templates and scripts, and everything loop uses is
-referenced from `loop.yaml`. `.loop/` holds only state (the base clone,
-per-run worktrees and run folders with `run.yaml` and logs) and is
-git-ignored.
+A loop project is a folder with a `loop.yaml`: the repository itself, or a
+separate folder next to it when the backlog should not live in the code
+repository. Commit it: it is the home of your backlog, prompt templates
+and scripts, and everything loop uses is referenced from `loop.yaml`.
+`.loop/` holds only state (the base clone, per-run worktrees and run
+folders with `run.yaml` and logs) and is git-ignored; runs work in those
+worktrees, never in your working copy.
 
 ## How one iteration works
 

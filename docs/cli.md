@@ -52,6 +52,14 @@ is part of; the base branch comes from that remote's HEAD and the project
 name from the repository name. Run it next to or inside your checkout and
 `loop.yaml` needs no edit before `loop doctor`.
 
+The project can be the checkout itself: `loop init` in the repository root
+puts `loop.yaml` and `backlog/` into the repository, where they are
+committed and reviewed like any other file, and appends `.loop/` to the
+existing `.gitignore` (a new one is written otherwise). loop still clones
+the repository into `.loop/repo` for its worktrees, so the working copy
+you edit is never touched by a run. Every loop command works from any
+folder of the repository.
+
 ## `loop doctor`
 
 Run every check a run depends on, before any worktree is created:
