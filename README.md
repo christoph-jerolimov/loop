@@ -128,7 +128,10 @@ error are parked as `blocked` or `failed` with a note on the PR or ticket,
 and `steps.blocked` or `steps.failed` can notify you; `loop resume <run>`
 puts them back. `budget` caps cost and agent time per run and per day, so
 a worker left alone cannot spend more than you decided; `loop stats` shows
-what it did spend.
+what it did spend. Checkouts of runs nobody came back to are removed
+after `retention.workdirs` (7 days), while run folders with logs and
+session transcripts are kept; a run resumed later checks its branch out
+again.
 
 ## Commands
 

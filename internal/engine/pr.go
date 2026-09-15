@@ -719,13 +719,20 @@ func (e *Engine) Resume(r *state.Run) error {
 	}
 	r.Error = ""
 	r.PendingFix = ""
-	if r.PR != nil {
+	switch {
+	case r.PR != nil && r.Branch != "" && !r.HasWorkdir():
+		// The checkout is gone (loop clean, retention): the branch is on
+		// the remote, so it is checked out again first.
+		r.SetPhase(state.PhaseCheckout, "resumed; workdir gone, checking the branch out again")
+	case r.PR != nil:
 		r.SetPhase(state.PhaseMonitor, "resumed")
 		r.NextPoll = time.Time{}
-	} else if r.Workdir != "" {
+	case r.HasWorkdir():
 		r.Attempt = 0
 		r.SetPhase(state.PhaseSession, "resumed")
-	} else {
+	default:
+		// No PR and no checkout: start over with a fresh branch.
+		r.Branch, r.Workdir = "", ""
 		r.SetPhase(state.PhaseQueued, "resumed")
 	}
 	return e.Store.Save(r)

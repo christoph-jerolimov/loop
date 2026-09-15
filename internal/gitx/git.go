@@ -101,6 +101,30 @@ func AddWorktree(ctx context.Context, repo, path, branch, base string) error {
 	return err
 }
 
+// AddWorktreeFor checks an existing remote branch out into a fresh
+// worktree, for a run whose checkout was removed. The local branch is
+// created (or reset) to the remote's state and tracks it.
+func AddWorktreeFor(ctx context.Context, repo, path, remote, branch string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if _, err := Run(ctx, repo, "fetch", remote, branch); err != nil {
+		return err
+	}
+	_, err := Run(ctx, repo, "worktree", "add", "-B", branch, path, remote+"/"+branch)
+	return err
+}
+
+// CheckoutRemote fetches a branch from the remote and checks it out in
+// the clone as a local branch of the same name that tracks it.
+func CheckoutRemote(ctx context.Context, dir, remote, branch string) error {
+	if _, err := Run(ctx, dir, "fetch", remote, branch); err != nil {
+		return err
+	}
+	_, err := Run(ctx, dir, "checkout", "-B", branch, "--track", remote+"/"+branch)
+	return err
+}
+
 // RemoveWorktree unregisters and deletes a worktree.
 func RemoveWorktree(ctx context.Context, repo, path string) error {
 	if _, err := os.Stat(path); err == nil {

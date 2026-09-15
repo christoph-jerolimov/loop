@@ -200,6 +200,19 @@ something is missing. See the [command reference](cli.md).
 Runs are locked per process (`.loop/runs/<run>/lock`), so several loop
 processes on the same project never drive the same run.
 
+## What stays on disk
+
+A finished run keeps its folder under `.loop/runs` for good: `run.yaml`,
+the run log, every session transcript and the prompt each session was
+started from, so `loop logs` and `loop stats` work for old runs too. Its
+checkout does not: the cleanup phase removes it when the item is closed,
+and [`retention.workdirs`](configuration.md#retention) (7 days by default)
+removes the checkouts of blocked and failed runs that nobody came back
+to, from `loop watch` every ten minutes or from `loop clean --older-than`.
+A run resumed after that checks its branch out again from the remote and
+runs the setup steps before it continues, so a blocked PR can be picked
+up weeks later without keeping a worktree around in the meantime.
+
 ## Contributing through a fork
 
 Without push access to a repository, set `repo.fork` to a fork you can

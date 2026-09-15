@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/state"
@@ -118,15 +120,20 @@ func TestJoin(t *testing.T) {
 	if _, err := execute(t, p, "join", fresh.ID); err == nil || !strings.Contains(err.Error(), "has no workdir yet") {
 		t.Errorf("join before checkout: %v", err)
 	}
+	workdir := filepath.Join(t.TempDir(), "loop work", "auth")
 	r := newRun(t, p, "auth", state.PhaseSession, func(r *state.Run) {
-		r.Workdir = "/tmp/loop work/auth"
+		r.Workdir = workdir
 		r.Sessions = []state.Session{{ID: "first"}, {ID: "second"}, {ID: ""}}
 	})
+	if _, err := execute(t, p, "join", r.ID); err == nil || !strings.Contains(err.Error(), "was removed") {
+		t.Errorf("join with a missing workdir: %v", err)
+	}
+	os.MkdirAll(workdir, 0o755)
 	out, err := execute(t, p, "join", r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != "cd '/tmp/loop work/auth' && claude --resume second" {
+	if strings.TrimSpace(out) != "cd '"+workdir+"' && claude --resume second" {
 		t.Errorf("join = %q (latest session with an id, workdir quoted)", out)
 	}
 }
@@ -169,6 +176,52 @@ func TestClean(t *testing.T) {
 	saved, _ := state.NewStore(cfg.StatePath()).Load(active.ID)
 	if saved.Phase != state.PhaseBlocked {
 		t.Errorf("an active run loses its workdir and must be blocked, got %s", saved.Phase)
+	}
+	if _, err := execute(t, p, "join", done.ID); err == nil || !strings.Contains(err.Error(), "was removed (loop clean or retention.workdirs); loop resume") {
+		t.Errorf("join after clean: %v", err)
+	}
+
+	// --older-than applies the retention rule: only runs that last changed
+	// long enough ago lose their checkout.
+	old := newRun(t, p, "old", state.PhaseDone, func(r *state.Run) { r.Workdir = mkWorkdir("old") })
+	backdate(t, old, time.Now().Add(-10*24*time.Hour))
+	recent := newRun(t, p, "recent", state.PhaseDone, func(r *state.Run) { r.Workdir = mkWorkdir("recent") })
+	out, err = execute(t, p, "clean", "--older-than", "7d")
+	if err != nil || !strings.Contains(out, "removed "+old.Workdir) || strings.Contains(out, recent.Workdir) {
+		t.Errorf("clean --older-than: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(old.Workdir); !os.IsNotExist(err) {
+		t.Error("old workdir must be removed")
+	}
+	if _, err := os.Stat(recent.Workdir); err != nil {
+		t.Error("recent workdir must be kept")
+	}
+	if _, err := os.Stat(filepath.Join(cfg.StatePath("runs", old.ID), state.FileName)); err != nil {
+		t.Error("the run folder stays")
+	}
+	out, _ = execute(t, p, "clean", "--older-than", "7d")
+	if !strings.Contains(out, "nothing to remove") {
+		t.Errorf("second pass:\n%s", out)
+	}
+	if _, err := execute(t, p, "clean", "--older-than", "soon"); err == nil || !strings.Contains(err.Error(), "--older-than: invalid interval") {
+		t.Errorf("bad interval: %v", err)
+	}
+	if _, err := execute(t, p, "clean", "--older-than", "7d", old.ID); err == nil || !strings.Contains(err.Error(), "takes no run argument") {
+		t.Errorf("--older-than with a run: %v", err)
+	}
+}
+
+// backdate rewrites the run's file with an older last-changed time, as if
+// it had ended back then.
+func backdate(t *testing.T, r *state.Run, updated time.Time) {
+	t.Helper()
+	r.Updated = updated
+	b, err := yaml.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.Dir(), state.FileName), b, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -399,7 +399,7 @@ loaded from (see [prompt files](prompts.md#prompt-files)).
 | `ci_log_lines` | `200` | Lines from the end of a failed CI job log (GitHub Actions, GitLab CI) passed to the CI fix prompt. `0` disables log fetching. |
 | `pr_status` | `true` | Post loop's phase, fix rounds and outcome as a commit status named `loop` on the PR head. See [loop's status on the PR](workflow.md#loops-status-on-the-pr). |
 | `ci_rerun` | `true` | Re-run the failed GitHub Actions jobs (retry the GitLab pipeline) once per head commit before starting a CI fix round, so a flaky job does not cost an agent session. Checks from other apps cannot be re-run. |
-| `cleanup` | `true` | Remove the workdir when the item is closed. |
+| `cleanup` | `true` | Remove the workdir when the item is closed. Workdirs of blocked and failed runs are removed by [`retention`](#retention). |
 | `pr_commands` | `true` | Let collaborators with push access drive a run from the PR: `/loop approve` releases a gate, `/loop resume` restarts a blocked run. |
 | `on_human_push` | `pause` | What happens when someone other than loop pushes to the run branch: `pause` parks the run with a note on the PR, `continue` fast-forwards the worktree and keeps driving on top of their commits. See [workflow](workflow.md#phases). |
 
@@ -434,6 +434,29 @@ budget:
   daily_runs: 10
 ```
 
+## `retention`
+
+How long finished runs keep what they leave on disk. Run folders with
+`run.yaml`, the log and every session transcript and prompt are always
+kept; only checkouts are removed, because they are what takes the space.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `workdirs` | `7d` | Remove the worktree or clone of a `done`, `failed` or `blocked` run this long after the run last changed. `0` keeps every checkout until `loop clean`. |
+
+`loop watch` applies the rule when it starts and every ten minutes, and
+says what it removed; `loop clean --older-than 7d` does the same by hand.
+A run whose checkout is gone can still be resumed: `loop resume` checks
+its branch out again from the remote when the run has a PR, and starts
+over with a fresh branch when it has none. `loop join` says when a
+checkout was removed. With `workflow.cleanup: false`, retention is what
+eventually removes the checkouts of merged runs.
+
+```yaml
+retention:
+  workdirs: 14d
+```
+
 ## Run state
 
 Each run lives in `.loop/runs/<run id>/`:
@@ -446,3 +469,9 @@ Each run lives in `.loop/runs/<run id>/`:
 | `session-NN-<kind>.log` | Raw agent output of each session. |
 | `summary.md` | What the agent wrote for the PR description. |
 | `lock` | Advisory lock held by the process driving the run. |
+
+Every command that lists runs reads this folder. A loop process keeps the
+runs it has parsed in memory and parses a `run.yaml` again only when its
+size or modification time changed, so a watch tick over thousands of
+finished runs costs a directory read and one stat per run; runs written
+by another loop process on the same project are picked up the same way.
