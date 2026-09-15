@@ -31,6 +31,11 @@ pnpm, yarn and bun, `Cargo.toml`, `pyproject.toml` (`pytest`), `pom.xml`,
 `build.gradle` and a `Makefile` with a `test` target. Nothing detected
 leaves both empty, and `loop doctor` reminds you to add the commands.
 
+When the repository was detected, the [doctor](#loop-doctor) checks run
+at the end, so a missing tool or token shows up before the first run;
+`--no-doctor` skips them. With placeholders left to edit, `loop doctor` is
+the next step instead.
+
 Prompts use the built-in templates, which improve with every loop release.
 `--prompts` writes editable copies to `prompts/` and points `loop.yaml` at
 them; in an existing project it writes the copies and prints the keys to

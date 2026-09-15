@@ -23,10 +23,11 @@ import (
 var scaffold embed.FS
 
 var (
-	initForce   bool
-	initRepo    string
-	initPrompts bool
-	initSources []string
+	initForce    bool
+	initRepo     string
+	initPrompts  bool
+	initSources  []string
+	initNoDoctor bool
 )
 
 var initCmd = &cobra.Command{
@@ -48,7 +49,11 @@ added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.
 
 When the checkout reveals its toolchain (go.mod, package.json, Cargo.toml,
 pyproject.toml, pom.xml, build.gradle, a Makefile with a test target),
-its test command becomes the verify step and the session may run it.`,
+its test command becomes the verify step and the session may run it.
+
+When the repository was detected, the doctor checks run at the end so
+the first loop run does not fail on a missing tool or token; --no-doctor
+skips them.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -102,14 +107,35 @@ its test command becomes the verify step and the session may run it.`,
 				fmt.Print(promptKeys)
 			}
 		}
-		fmt.Println("Next steps:")
 		if det.From == "" {
+			fmt.Println("Next steps:")
 			fmt.Println("  1. edit loop.yaml: set repo.url and your sources")
-		} else {
-			fmt.Println("  1. check loop.yaml: repository, base branch and sources")
+			fmt.Println("  2. loop doctor")
+			fmt.Println("  3. put ideas into backlog/*.md or label issues ready-for-agent")
+			fmt.Println("  4. loop list, then loop run <item>")
+			return nil
 		}
-		fmt.Println("  2. put ideas into backlog/*.md or label issues ready-for-agent")
-		fmt.Println("  3. loop list, then loop run <item>")
+		if !initNoDoctor {
+			fmt.Println()
+			d := &doctor{ctx: cmd.Context()}
+			saved := projectDir
+			projectDir = dir
+			d.run()
+			projectDir = saved
+			fmt.Println()
+			if d.failed > 0 {
+				fmt.Printf("%d check(s) failed. Next steps:\n", d.failed)
+				fmt.Println("  1. fix the failed checks above, then: loop doctor")
+				fmt.Println("  2. put ideas into backlog/*.md or label issues ready-for-agent")
+				fmt.Println("  3. loop list, then loop run <item>")
+				return nil
+			}
+			fmt.Printf("all checks passed (%d warning(s)). ", d.warned)
+		}
+		fmt.Println("Next steps:")
+		fmt.Println("  1. write an idea: $EDITOR backlog/my-idea.md (see backlog/example.md)")
+		fmt.Println("  2. loop list")
+		fmt.Println("  3. loop run my-idea.md")
 		return nil
 	},
 }
@@ -340,4 +366,5 @@ func init() {
 	initCmd.Flags().StringVar(&initRepo, "repo", "", "clone URL of the target repository (default: origin of the surrounding git checkout)")
 	initCmd.Flags().BoolVar(&initPrompts, "prompts", false, "write editable copies of the prompt templates to prompts/ and point loop.yaml at them")
 	initCmd.Flags().StringSliceVar(&initSources, "source", nil, "issue sources to add besides the markdown backlog: github, gitlab, jira (default: the repository's host when its token is set)")
+	initCmd.Flags().BoolVar(&initNoDoctor, "no-doctor", false, "do not run the doctor checks after scaffolding")
 }
