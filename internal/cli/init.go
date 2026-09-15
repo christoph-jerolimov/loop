@@ -20,17 +20,23 @@ import (
 var scaffold embed.FS
 
 var (
-	initForce bool
-	initRepo  string
+	initForce   bool
+	initRepo    string
+	initPrompts bool
 )
 
 var initCmd = &cobra.Command{
 	Use:   "init [dir]",
-	Short: "Create a loop project: loop.yaml, prompts/, backlog/, hooks/ and .gitignore",
+	Short: "Create a loop project: loop.yaml, backlog/, hooks/ and .gitignore",
 	Long: `Creates a loop project in dir (default: the current folder). The target
 repository is taken from --repo, or from the origin remote of the git
 checkout that dir or the current folder is part of; the base branch from
-that remote's HEAD. Without either, loop.yaml gets placeholders to edit.`,
+that remote's HEAD. Without either, loop.yaml gets placeholders to edit.
+
+Prompts use the built-in templates unless --prompts is given, which
+writes editable copies to prompts/ and points loop.yaml at them. In an
+existing project --prompts only writes the files and prints the keys to
+add to loop.yaml.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -41,6 +47,7 @@ that remote's HEAD. Without either, loop.yaml gets placeholders to edit.`,
 			return err
 		}
 		det := detectRepo(cmd.Context(), dir, projectDir, initRepo)
+		det.Prompts = initPrompts
 		if det.From != "" {
 			fmt.Printf("using   %s (%s)\n", det.URL, det.From)
 		}
@@ -48,7 +55,8 @@ that remote's HEAD. Without either, loop.yaml gets placeholders to edit.`,
 		if err != nil {
 			return err
 		}
-		if err := writeNew(filepath.Join(dir, "loop.yaml"), cfg); err != nil {
+		wrote, err := writeNew(filepath.Join(dir, "loop.yaml"), cfg)
+		if err != nil {
 			return err
 		}
 		files := map[string]string{
@@ -61,13 +69,19 @@ that remote's HEAD. Without either, loop.yaml gets placeholders to edit.`,
 			if err != nil {
 				return err
 			}
-			if err := writeNew(filepath.Join(dir, dst), b); err != nil {
+			if _, err := writeNew(filepath.Join(dir, dst), b); err != nil {
 				return err
 			}
 		}
-		for _, name := range []string{prompt.TplSession, prompt.TplPlan, prompt.TplSelfReview, prompt.TplReview, prompt.TplCI, prompt.TplConflict, prompt.TplVerify, prompt.TplPRBody} {
-			if err := writeNew(filepath.Join(dir, "prompts", name+".md"), []byte(prompt.Default(name))); err != nil {
-				return err
+		if initPrompts {
+			for _, name := range promptNames {
+				if _, err := writeNew(filepath.Join(dir, "prompts", name+".md"), []byte(prompt.Default(name))); err != nil {
+					return err
+				}
+			}
+			if !wrote {
+				fmt.Println("add to loop.yaml to use the copies:")
+				fmt.Print(promptKeys)
 			}
 		}
 		fmt.Println("Next steps:")
@@ -82,11 +96,30 @@ that remote's HEAD. Without either, loop.yaml gets placeholders to edit.`,
 	},
 }
 
-// repoDetection is what loop init found out about the target repository.
+// promptNames are the templates --prompts writes, in the order of the keys.
+var promptNames = []string{prompt.TplSession, prompt.TplPlan, prompt.TplSelfReview, prompt.TplReview, prompt.TplCI, prompt.TplConflict, prompt.TplVerify, prompt.TplPRBody}
+
+// promptKeys is the loop.yaml fragment that points at the copies.
+const promptKeys = `prompts:
+  session: prompts/session.md
+  plan: prompts/plan.md
+  self_review: prompts/self-review.md
+  review: prompts/review.md
+  ci: prompts/ci.md
+  conflict: prompts/conflict.md
+  verify: prompts/verify.md
+pr:
+  body: prompts/pr-body.md
+`
+
+// repoDetection is what loop init found out about the target repository
+// and how the scaffold is rendered.
 type repoDetection struct {
 	Name, URL, Base string
 	// From says where the URL came from; "" means it is a placeholder.
 	From string
+	// Prompts points loop.yaml at copies of the templates in prompts/.
+	Prompts bool
 }
 
 const placeholderURL = "git@github.com:my-org/my-service.git"
@@ -153,26 +186,29 @@ func renderScaffold(name string, det repoDetection) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func writeNew(path string, content []byte) error {
+// writeNew writes the file unless it exists (or --force is given) and
+// reports whether it wrote.
+func writeNew(path string, content []byte) (bool, error) {
 	if _, err := os.Stat(path); err == nil && !initForce {
 		fmt.Printf("keep    %s (exists)\n", path)
-		return nil
+		return false, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return false, err
 	}
 	mode := os.FileMode(0o644)
 	if filepath.Ext(path) == ".sh" {
 		mode = 0o755
 	}
 	if err := os.WriteFile(path, content, mode); err != nil {
-		return err
+		return false, err
 	}
 	fmt.Printf("created %s\n", path)
-	return nil
+	return true, nil
 }
 
 func init() {
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing files")
 	initCmd.Flags().StringVar(&initRepo, "repo", "", "clone URL of the target repository (default: origin of the surrounding git checkout)")
+	initCmd.Flags().BoolVar(&initPrompts, "prompts", false, "write editable copies of the prompt templates to prompts/ and point loop.yaml at them")
 }

@@ -34,8 +34,8 @@ const quickStart = `# grab a binary from github.com/christoph-jerolimov/loop/rel
 go install github.com/christoph-jerolimov/loop/cmd/loop@latest
 
 mkdir my-service-loop && cd my-service-loop
-loop init                 # loop.yaml, prompts/, backlog/, hooks/
-$EDITOR loop.yaml         # repo.url and your sources
+loop init                 # loop.yaml from the surrounding checkout, backlog/
+$EDITOR loop.yaml         # check repository and sources
 loop doctor               # tools, tokens, repo and sources
 $EDITOR backlog/login.md  # write an idea
 
