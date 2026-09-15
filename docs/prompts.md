@@ -1,8 +1,9 @@
 # Prompt templates
 
-Templates are Go `text/template` files. `loop init` copies the built-in
-defaults to `prompts/` so you can edit them; `loop show <item> --prompt`
-prints the rendered session prompt for an item.
+Templates are Go `text/template` files. The built-in defaults are used
+unless `loop.yaml` points at your own; `loop init --prompts` writes
+editable copies to `prompts/`, and `loop show <item> --prompt` prints the
+rendered session prompt for an item.
 
 ## Data
 

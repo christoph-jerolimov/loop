@@ -14,9 +14,14 @@ Prints the release version (`dev` for source builds without `make`).
 
 ## `loop init [dir]`
 
-Scaffold a project: `loop.yaml`, `prompts/` with the built-in templates,
-`backlog/example.md`, `hooks/setup.sh` and a `.gitignore` for `.loop/`.
-Existing files are kept unless `--force` is given.
+Scaffold a project: `loop.yaml`, `backlog/example.md`, `hooks/setup.sh`
+and a `.gitignore` for `.loop/`. Existing files are kept unless `--force`
+is given.
+
+Prompts use the built-in templates, which improve with every loop release.
+`--prompts` writes editable copies to `prompts/` and points `loop.yaml` at
+them; in an existing project it writes the copies and prints the keys to
+add to `loop.yaml`.
 
 The target repository is filled in from `--repo <url>`, or from the
 `origin` remote of the git checkout that `dir` or the current folder (`-C`)

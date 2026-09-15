@@ -220,7 +220,7 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	for _, f := range []string{"loop.yaml", "backlog/example.md", ".gitignore", "hooks/setup.sh", "prompts/session.md", "prompts/review.md", "prompts/ci.md", "prompts/conflict.md", "prompts/verify.md", "prompts/pr-body.md"} {
+	for _, f := range []string{"loop.yaml", "backlog/example.md", ".gitignore", "hooks/setup.sh"} {
 		info, err := os.Stat(filepath.Join(dir, f))
 		if err != nil {
 			t.Errorf("%s not created: %v", f, err)
@@ -236,6 +236,13 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	if !strings.Contains(out, "Next steps:") {
 		t.Errorf("no next steps:\n%s", out)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "prompts")); !os.IsNotExist(err) {
+		t.Error("prompts are built in; copies are written only with --prompts")
+	}
+	cfg := loadConfig(t, &project{dir: dir})
+	if cfg.Prompts.Session != "" || cfg.PR.Body != "" {
+		t.Errorf("the default loop.yaml must leave prompts at the built-ins: %+v", cfg.Prompts)
+	}
 	// A second run keeps existing files; --force rewrites them.
 	os.WriteFile(filepath.Join(dir, "loop.yaml"), []byte("name: mine\n"), 0o644)
 	out, err = execute(t, p, "init", dir)
@@ -250,6 +257,42 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "loop.yaml")); string(b) == "name: mine\n" {
 		t.Error("--force must overwrite")
+	}
+}
+
+func TestInitPromptsWritesCopiesAndPointsAtThem(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "new")
+	p := &project{dir: t.TempDir()}
+	out, err := execute(t, p, "init", "--prompts", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	for _, f := range []string{"session", "plan", "self-review", "review", "ci", "conflict", "verify", "pr-body"} {
+		if _, err := os.Stat(filepath.Join(dir, "prompts", f+".md")); err != nil {
+			t.Errorf("prompts/%s.md not created: %v", f, err)
+		}
+	}
+	cfg := loadConfig(t, &project{dir: dir})
+	if cfg.Prompts.Session != "prompts/session.md" || cfg.Prompts.Verify != "prompts/verify.md" || cfg.PR.Body != "prompts/pr-body.md" {
+		t.Errorf("loop.yaml must point at the copies: %+v body=%q", cfg.Prompts, cfg.PR.Body)
+	}
+	if strings.Contains(out, "add to loop.yaml") {
+		t.Errorf("a fresh project needs no manual edit:\n%s", out)
+	}
+	// In an existing project the files are written and the keys are printed.
+	existing := filepath.Join(t.TempDir(), "old")
+	if _, err := execute(t, p, "init", existing); err != nil {
+		t.Fatal(err)
+	}
+	out, err = execute(t, p, "init", "--prompts", existing)
+	if err != nil || !strings.Contains(out, "add to loop.yaml to use the copies:\nprompts:\n  session: prompts/session.md") {
+		t.Errorf("existing project: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(existing, "prompts", "ci.md")); err != nil {
+		t.Errorf("copies not written into the existing project: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(existing, "loop.yaml")); strings.Contains(string(b), "\nprompts:\n  session") {
+		t.Error("an existing loop.yaml must not be rewritten")
 	}
 }
 

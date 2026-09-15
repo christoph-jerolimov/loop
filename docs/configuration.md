@@ -120,7 +120,7 @@ Credentials: `JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud, basic auth) or
 ## `prompts`
 
 Paths to template files; missing keys use the built-in defaults
-(`loop init` writes copies to `prompts/`).
+(`loop init --prompts` writes editable copies to `prompts/`).
 
 | Key | Used for |
 | --- | --- |

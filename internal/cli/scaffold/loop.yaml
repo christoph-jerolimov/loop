@@ -40,9 +40,10 @@ sources:
   #     in_progress: In Progress
   #     done: Done
 
-# Prompt templates (Go text/template). Omit an entry to use the built-in
-# default; run "loop init" to get editable copies in prompts/.
-prompts:
+# Prompt templates (Go text/template). Omitted entries use the built-in
+# defaults, which improve with every loop release; "loop init --prompts"
+# writes editable copies to prompts/ and points these keys at them.
+[[if .Prompts]]prompts:
   session: prompts/session.md
   plan: prompts/plan.md
   self_review: prompts/self-review.md
@@ -50,7 +51,11 @@ prompts:
   ci: prompts/ci.md
   conflict: prompts/conflict.md
   verify: prompts/verify.md
-
+[[else]]# prompts:
+#   session: prompts/session.md
+#   review: prompts/review.md
+#   ci: prompts/ci.md
+[[end]]
 agent:
   runner: claude             # claude | cursor | codex | gemini | aider | opencode | copilot | amp | custom
   # command: ./hooks/agent.sh  # custom: any script that reads $LOOP_PROMPT_FILE and commits
@@ -94,7 +99,7 @@ steps:
 pr:
   draft: true                # opened as draft, marked ready once CI is green
   title: "{{ .Item.Title }}"
-  # body: prompts/pr-body.md
+  [[if .Prompts]]body: prompts/pr-body.md[[else]]# body: prompts/pr-body.md[[end]]
   reviewers: []
   labels: []
   link_issue: true           # "Closes #n" for GitHub and GitLab issues
