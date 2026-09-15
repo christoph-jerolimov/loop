@@ -95,8 +95,10 @@ func scheduleVerdict(rd engine.Readiness) string {
 	switch {
 	case rd.ScheduleError != "":
 		return rd.ScheduleError
-	case rd.LastRun == nil:
+	case rd.LastRun == nil && rd.Due:
 		return "never ran, due now; loop watch --pick would start it"
+	case rd.LastRun == nil:
+		return fmt.Sprintf("never ran, first due %s; loop run starts it anyway, loop watch --pick waits", rd.NextDue.Local().Format("2006-01-02 15:04"))
 	case rd.Due:
 		return fmt.Sprintf("last run %s, due since %s; loop watch --pick would start it", rd.LastRun.ID, rd.NextDue.Local().Format("2006-01-02 15:04"))
 	}

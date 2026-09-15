@@ -710,15 +710,36 @@ func TestRecurringItemsInListShowDryRunAndDoctor(t *testing.T) {
 	// A schedule that does not parse is reported everywhere and never started.
 	os.WriteFile(filepath.Join(p.dir, "backlog", "soon.md"), []byte("---\ntitle: Soon\nevery: soon\n---\nx\n"), 0o644)
 	out, _ = execute(t, p, "list")
-	if !strings.Contains(out, "invalid schedule: invalid interval \"soon\"") {
+	if !strings.Contains(out, "invalid schedule: cannot parse \"soon\"") {
 		t.Errorf("list must flag the bad schedule:\n%s", out)
 	}
 	out, err = execute(t, p, "doctor")
-	if err == nil || !strings.Contains(out, "FAIL  source backlog: item backlog:soon: invalid interval \"soon\"") {
+	if err == nil || !strings.Contains(out, "FAIL  source backlog: item backlog:soon: cannot parse \"soon\"") {
 		t.Errorf("doctor must fail on a bad schedule: %v\n%s", err, out)
 	}
-	if _, err := execute(t, p, "run", "--force", "soon.md"); err == nil || !strings.Contains(err.Error(), "invalid interval") {
+	if _, err := execute(t, p, "run", "--force", "soon.md"); err == nil || !strings.Contains(err.Error(), "cannot parse \"soon\"") {
 		t.Errorf("run must refuse a bad schedule even with --force, got %v", err)
+	}
+	// Calendar schedules: a ticket created on a Tuesday for Monday mornings
+	// waits for its first Monday, and the doctor accepts cron syntax.
+	os.WriteFile(filepath.Join(p.dir, "backlog", "monday.md"), []byte("---\ntitle: Monday\ncreated: 2026-09-15\nevery: mon 06:00\n---\nx\n"), 0o644)
+	os.WriteFile(filepath.Join(p.dir, "backlog", "cron.md"), []byte("---\ntitle: Cron\ncreated: 2026-09-15\n---\nevery: 0 6 * * 1\n"), 0o644)
+	out, _ = execute(t, p, "show", "monday.md")
+	if !strings.Contains(out, "every:      mon 06:00") || !strings.Contains(out, "last run:   never\nnext due:   ") {
+		t.Errorf("show for a calendar item that never ran:\n%s", out)
+	}
+	out, _ = execute(t, p, "run", "--dry-run", "monday.md")
+	if !strings.Contains(out, "schedule:      every mon 06:00; never ran, first due ") || strings.Contains(out, "due now") {
+		t.Errorf("dry run for a calendar item that never ran:\n%s", out)
+	}
+	out, _ = execute(t, p, "list")
+	if !strings.Contains(out, "backlog:cron    Cron                  0 6 * * 1  due ") {
+		t.Errorf("list must show the cron schedule and its first due time:\n%s", out)
+	}
+	os.Remove(filepath.Join(p.dir, "backlog", "soon.md"))
+	out, err = execute(t, p, "doctor")
+	if err != nil || !strings.Contains(out, "source backlog: 3 recurring item(s) with a valid schedule") {
+		t.Errorf("doctor must accept calendar schedules: %v\n%s", err, out)
 	}
 	// A one-shot item cannot depend on a recurring one.
 	os.WriteFile(filepath.Join(p.dir, "backlog", "after.md"), []byte("---\ntitle: After\n---\nDepends on: weekly.md\n"), 0o644)

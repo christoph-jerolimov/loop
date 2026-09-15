@@ -124,11 +124,14 @@ var showCmd = &cobra.Command{
 		}
 		if it.Recurring() {
 			fmt.Printf("every:      %s%s\n", it.Every, scheduleNote(rd))
-			if rd.LastRun != nil {
+			switch {
+			case rd.LastRun != nil:
 				fmt.Printf("last run:   %s (%s%s)\n", rd.LastRun.ID, rd.LastRun.Phase, outcomeNote(rd.LastRun))
 				fmt.Printf("next due:   %s\n", rd.NextDue.Local().Format("2006-01-02 15:04"))
-			} else {
+			case rd.NextDue.IsZero():
 				fmt.Printf("last run:   never; due now\n")
+			default:
+				fmt.Printf("last run:   never\nnext due:   %s\n", rd.NextDue.Local().Format("2006-01-02 15:04"))
 			}
 		}
 		fmt.Printf("comments:   %d\n\n%s\n", len(it.Comments), it.Body)

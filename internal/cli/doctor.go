@@ -17,6 +17,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/jiraapi"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
+	"github.com/christoph-jerolimov/loop/internal/schedule"
 	"github.com/christoph-jerolimov/loop/internal/source"
 )
 
@@ -283,8 +284,13 @@ func (d *doctor) checkSources(cfg *config.Config, h host.Host) {
 			if !it.Recurring() {
 				continue
 			}
-			if _, err := it.Interval(); err != nil {
+			sched, err := schedule.Parse(it.Every)
+			if err != nil {
 				d.fail("source %s: item %s: %v", s.Name(), it.ID, err)
+				continue
+			}
+			if _, ok := sched.Next(time.Now()); !ok {
+				d.fail("source %s: item %s: schedule %q never fires", s.Name(), it.ID, it.Every)
 				continue
 			}
 			recurring++

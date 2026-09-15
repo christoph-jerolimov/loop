@@ -48,9 +48,9 @@ type Item struct {
 	// Priority orders items ahead of source order and age: 1 is the
 	// highest, 0 means none. See ParsePriority for the accepted spellings.
 	Priority int `json:"priority,omitempty" yaml:"priority,omitempty"`
-	// Every makes the item recurring: it is picked again once this interval
-	// has passed since its previous run started, and it is never closed.
-	// Kept as the author wrote it ("7d", "weekly"); see ParseInterval.
+	// Every makes the item recurring: it is picked again on this schedule
+	// and never closed. Kept as the author wrote it ("7d", "weekly",
+	// "mon 06:00", "0 6 * * 1"); the schedule package parses it.
 	Every string `json:"every,omitempty" yaml:"every,omitempty"`
 	// Extra carries source-specific values, e.g. the GitHub node id.
 	Extra map[string]string `json:"extra,omitempty" yaml:"extra,omitempty"`
@@ -63,7 +63,7 @@ var (
 	dependsRe = regexp.MustCompile(`(?im)^\s*depends[ -]on:\s*(.+?)\s*$`)
 	modelRe   = regexp.MustCompile(`(?im)^\s*model:\s*(\S+)\s*$`)
 	prioRe    = regexp.MustCompile(`(?im)^\s*prio(?:rity)?:\s*(\S+)\s*$`)
-	everyRe   = regexp.MustCompile(`(?im)^\s*every:\s*(\S+)\s*$`)
+	everyRe   = regexp.MustCompile(`(?im)^\s*every:\s*(\S.*?)\s*$`)
 	labelRe   = regexp.MustCompile(`(?i)^prio(?:rity)?\s*[:/=-]\s*(.+)$`)
 	splitRe   = regexp.MustCompile(`[,\s]+`)
 )
@@ -107,16 +107,7 @@ func (it *Item) ApplyBodyDirectives() {
 // Recurring reports whether the item runs on a schedule instead of once.
 func (it *Item) Recurring() bool { return it.Every != "" }
 
-// Interval is the parsed schedule of a recurring item; zero for a one-shot
-// item, an error when Every is not a valid interval.
-func (it *Item) Interval() (time.Duration, error) {
-	if it.Every == "" {
-		return 0, nil
-	}
-	return ParseInterval(it.Every)
-}
-
-// ParseInterval turns a schedule spelling into a duration: the words
+// ParseInterval turns an interval spelling into a duration: the words
 // hourly, daily, weekly, fortnightly and monthly (30 days), or a duration
 // with the Go units plus d (days) and w (weeks), such as 7d, 2w or 1d12h.
 // Intervals shorter than a minute are rejected.

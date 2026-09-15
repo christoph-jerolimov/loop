@@ -75,18 +75,27 @@ An item with a schedule is picked up again and again instead of once:
 - markdown: an `every:` frontmatter key.
 - any source: a body line `every: 7d`, like `depends on:` and `model:`.
 
-The value is a duration in Go syntax extended with `d` (days) and `w`
-(weeks), for example `7d`, `2w`, `36h`, `1d12h`, or one of the words
-`hourly`, `daily`, `weekly`, `fortnightly`, `monthly` (30 days). Anything
-below a minute is rejected; `loop doctor` fails on a schedule that does
-not parse and `loop list` shows it as `invalid schedule`.
+The value is either an interval or a calendar schedule:
 
-A recurring item is due when the interval has passed since its previous
-run started, counted from `.loop/runs`; a run that failed counts too, so a
-broken task does not restart every tick. It is never closed: after the
-merge loop releases the claim, notes the merge and the next due time on
-the ticket, and the PR carries no `Closes #n`. A session without commits
-ends the run as `done` with outcome `no-changes` instead of failing. See
+| Form | Examples | Due when |
+| --- | --- | --- |
+| Interval | `7d`, `2w`, `36h`, `1d12h`; `hourly`, `daily`, `weekly`, `fortnightly`, `monthly` (30 days) | That much time has passed since the previous run started. Never ran: due now. |
+| Day and time | `mon 06:00`, `mon,thu 06:30`, `weekdays 07:30`, `weekends 10:00`, `daily 03:00`, `06:00` (every day), `monday` (midnight) | The next such time after the previous run started has passed. Never ran: the first such time after the item was created. |
+| Cron | `0 6 * * 1` (minute hour day-of-month month day-of-week; `*`, ranges, lists, `*/n`, month and day names, `7` for Sunday, both day fields set means either matches), `@hourly`, `@daily`, `@weekly`, `@monthly` | Same as day and time. |
+
+Intervals use Go duration syntax extended with `d` (days) and `w` (weeks)
+and must be a minute or more. Calendar times are the local time of the
+machine running `loop watch`. A calendar schedule is checked against the
+previous run's start, so when loop was not running for three weeks a
+weekly task is due once, not three times. A run that failed counts as a
+run too, so a broken task does not restart every tick. `loop doctor`
+fails on a schedule that does not parse or never fires (a 30th of
+February); `loop list` shows it as `invalid schedule`.
+
+A recurring item is never closed: after the merge loop releases the
+claim, notes the merge and the next due time on the ticket, and the PR
+carries no `Closes #n`. A session without commits ends the run as `done`
+with outcome `no-changes` instead of failing. See
 [workflow](workflow.md#recurring-items) for the whole lifecycle.
 
 ### `type: markdown`

@@ -128,7 +128,7 @@ transcript in `loop logs --session` is never coloured.
 | --- | --- |
 | `--force` | Ignore open dependencies and in-progress markers. |
 | `--no-watch` | Return once the PR is opened; monitor later with `loop watch`. |
-| `--dry-run` | Print what the run would do and stop: whether it would start (and why not), the schedule and next due time of a recurring item, branch, workdir, base and fork, harness, model, attempts and timeout, the phase chain with gates, configured steps, PR and merge policy, budget caps, the PR title and the rendered plan and session prompts. Nothing is started, claimed or written. |
+| `--dry-run` | Print what the run would do and stop: whether it would start (and why not), the schedule and next due time of a recurring item (also for one that never ran), branch, workdir, base and fork, harness, model, attempts and timeout, the phase chain with gates, configured steps, PR and merge policy, budget caps, the PR title and the rendered plan and session prompts. Nothing is started, claimed or written. |
 | `--all` | Start every ready item in backlog order (recurring items only when due), respecting `workflow.concurrency`, and return when nothing is left. |
 | `-s, --source` | With `--all`: only items from this source. |
 

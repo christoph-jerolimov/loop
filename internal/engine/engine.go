@@ -20,6 +20,7 @@ import (
 	"github.com/christoph-jerolimov/loop/internal/host"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/prompt"
+	"github.com/christoph-jerolimov/loop/internal/schedule"
 	"github.com/christoph-jerolimov/loop/internal/source"
 	"github.com/christoph-jerolimov/loop/internal/state"
 	"github.com/christoph-jerolimov/loop/internal/term"
@@ -164,17 +165,31 @@ func (e *Engine) Check(ctx context.Context, it *item.Item) Readiness {
 	}
 	if it.Recurring() {
 		rd.Recurring = true
-		interval, err := it.Interval()
+		sched, err := schedule.Parse(it.Every)
 		if err != nil {
 			rd.ScheduleError = err.Error()
 		}
 		if r, _ := e.Store.OpenForItem(it.ID); r != nil {
 			rd.ActiveRun = r
 		}
+		// The next due time follows the previous run's start. A calendar
+		// schedule that never ran counts from the item's creation, so a
+		// ticket made on Tuesday for "mon 06:00" waits for Monday; an
+		// interval that never ran is due right away.
+		var since time.Time
 		if last, _ := e.Store.LastForItem(it.ID); last != nil {
 			rd.LastRun = last
-			rd.NextDue = last.Created.Add(interval)
-			rd.Due = !e.now().Before(rd.NextDue)
+			since = last.Created
+		} else if err == nil && sched.Calendar() {
+			since = it.Created
+		}
+		if err == nil && !since.IsZero() {
+			next, ok := sched.Next(since)
+			if !ok {
+				rd.ScheduleError = fmt.Sprintf("schedule %q never fires", it.Every)
+			}
+			rd.NextDue = next
+			rd.Due = ok && !e.now().Before(next)
 		}
 	} else if r, _ := e.Store.ForItem(it.ID); r != nil {
 		rd.ActiveRun = r
@@ -949,11 +964,15 @@ func (e *Engine) finishWithoutChanges(ctx context.Context, r *state.Run) error {
 
 // nextDueNote says when a recurring item runs again, for ticket notes.
 func (e *Engine) nextDueNote(r *state.Run) string {
-	interval, err := r.Item.Interval()
-	if err != nil || interval == 0 {
+	sched, err := schedule.Parse(r.Item.Every)
+	if err != nil {
 		return ""
 	}
-	return " The next occurrence is due " + r.Created.Add(interval).Format("2006-01-02 15:04") + " (every " + r.Item.Every + ")."
+	next, ok := sched.Next(r.Created)
+	if !ok {
+		return ""
+	}
+	return " The next occurrence is due " + next.Format("2006-01-02 15:04") + " (every " + r.Item.Every + ")."
 }
 
 func (e *Engine) commitLeftovers(ctx context.Context, r *state.Run, msg string) error {
