@@ -39,6 +39,10 @@ repository is taken from --repo, or from the origin remote of the git
 checkout that dir or the current folder is part of; the base branch from
 that remote's HEAD. Without either, loop.yaml gets placeholders to edit.
 
+The project can be a folder next to your checkout or the checkout itself:
+run "loop init" in the repository root and loop.yaml and backlog/ live in
+the repository while .loop/ is added to its .gitignore.
+
 Prompts use the built-in templates unless --prompts is given, which
 writes editable copies to prompts/ and points loop.yaml at them. In an
 existing project --prompts only writes the files and prints the keys to
@@ -91,18 +95,15 @@ default. --full writes the annotated version with every option instead.`,
 		if err != nil {
 			return err
 		}
-		files := map[string]string{
-			"backlog/example.md": "scaffold/example.md",
-			".gitignore":         "scaffold/gitignore",
+		example, err := scaffold.ReadFile("scaffold/example.md")
+		if err != nil {
+			return err
 		}
-		for dst, src := range files {
-			b, err := scaffold.ReadFile(src)
-			if err != nil {
-				return err
-			}
-			if _, err := writeNew(filepath.Join(dir, dst), b); err != nil {
-				return err
-			}
+		if _, err := writeNew(filepath.Join(dir, "backlog", "example.md"), example); err != nil {
+			return err
+		}
+		if err := ignoreState(dir); err != nil {
+			return err
 		}
 		if initPrompts {
 			for _, name := range promptNames {
@@ -146,6 +147,38 @@ default. --full writes the annotated version with every option instead.`,
 		fmt.Println("  3. loop run my-idea.md")
 		return nil
 	},
+}
+
+// ignoreState makes sure .loop/ is git-ignored: a fresh .gitignore in a
+// new folder, or one line appended to the .gitignore that is already
+// there when the project lives inside the repository itself.
+func ignoreState(dir string) error {
+	path := filepath.Join(dir, ".gitignore")
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		b, err := scaffold.ReadFile("scaffold/gitignore")
+		if err != nil {
+			return err
+		}
+		_, err = writeNew(path, b)
+		return err
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		switch strings.TrimSpace(line) {
+		case ".loop", ".loop/", "/.loop", "/.loop/":
+			fmt.Printf("keep    %s (already ignores .loop/)\n", path)
+			return nil
+		}
+	}
+	add := "# loop state: base clone, workdirs and run logs\n.loop/\n"
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		add = "\n" + add
+	}
+	if err := os.WriteFile(path, append(existing, []byte(add)...), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("added   .loop/ to %s\n", path)
+	return nil
 }
 
 // promptNames are the templates --prompts writes, in the order of the keys.

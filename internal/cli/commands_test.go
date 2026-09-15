@@ -319,6 +319,44 @@ func TestInitDetectsToolchain(t *testing.T) {
 	}
 }
 
+func TestInitInsideTheRepository(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "widgets")
+	os.MkdirAll(repo, 0o755)
+	git(t, repo, "init", "-q")
+	git(t, repo, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("node_modules"), 0o644)
+	os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module widgets\n"), 0o644)
+
+	p := &project{dir: repo}
+	out, err := execute(t, p, "init", "--no-doctor", "--source", "markdown", repo)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	ignore, _ := os.ReadFile(filepath.Join(repo, ".gitignore"))
+	if string(ignore) != "node_modules\n# loop state: base clone, workdirs and run logs\n.loop/\n" || !strings.Contains(out, "added   .loop/ to "+filepath.Join(repo, ".gitignore")) {
+		t.Errorf("the repository's .gitignore must gain .loop/ without losing its lines:\n%s\n%s", ignore, out)
+	}
+	cfg := loadConfig(t, p)
+	if cfg.Repo.GitHub != "acme/widgets" || cfg.Steps.Verify[0].Run != "go test ./..." || cfg.Dir != repo {
+		t.Errorf("in-repo project: %+v", cfg.Repo)
+	}
+	// The project is found from any folder of the repository and lists the example item.
+	os.MkdirAll(filepath.Join(repo, "internal", "pkg"), 0o755)
+	out, err = execute(t, &project{dir: filepath.Join(repo, "internal", "pkg")}, "list")
+	if err != nil || !strings.Contains(out, "backlog:example") {
+		t.Errorf("list from a subfolder: %v\n%s", err, out)
+	}
+	// Running init again keeps everything and does not duplicate the ignore line.
+	out, _ = execute(t, p, "init", "--no-doctor", "--source", "markdown", repo)
+	ignore, _ = os.ReadFile(filepath.Join(repo, ".gitignore"))
+	if strings.Count(string(ignore), ".loop/") != 1 || !strings.Contains(out, "already ignores .loop/") {
+		t.Errorf("second init:\n%s\n%s", ignore, out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "loop.yaml")); !strings.Contains(string(b), "acme/widgets") {
+		t.Error("loop.yaml must be kept")
+	}
+}
+
 func TestInitWritesShortConfigUnlessFull(t *testing.T) {
 	p := &project{dir: t.TempDir()}
 	short := filepath.Join(t.TempDir(), "short")
