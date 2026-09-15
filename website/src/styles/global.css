@@ -165,8 +165,10 @@ img { max-width: 100%; }
 @media (max-width: 900px) {
   .hero, .split { grid-template-columns: 1fr; }
   .steps, .features { grid-template-columns: 1fr 1fr; }
-  .docs { grid-template-columns: 1fr; gap: 1.5rem; }
-  .sidebar { position: static; }
+  /* Match `.docs:has(.outline)` specificity so the 1100px rule cannot keep two columns here. */
+  .docs, .docs:has(.outline) { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+  /* Content first, doc links below it on small screens. */
+  .sidebar { position: static; order: 1; padding-top: 1.5rem; border-top: 1px solid var(--border); }
 }
 @media (max-width: 600px) {
   .steps, .features { grid-template-columns: 1fr; }
