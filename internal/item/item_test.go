@@ -104,24 +104,26 @@ func TestRecurringDirective(t *testing.T) {
 	if !it.Recurring() || it.Every != "7d" {
 		t.Errorf("every directive not applied: %+v", it)
 	}
-	if d, err := it.Interval(); err != nil || d != 7*24*time.Hour {
-		t.Errorf("Interval = %v, %v", d, err)
-	}
 	it = &Item{Body: "every: 1d", Every: "weekly"}
 	it.ApplyBodyDirectives()
 	if it.Every != "weekly" {
 		t.Error("an explicit schedule wins over the body line")
 	}
+	// A calendar schedule with a space is one directive line too.
+	it = &Item{Body: "Sweep the lint.\n\nevery: mon 06:00\n"}
+	it.ApplyBodyDirectives()
+	if it.Every != "mon 06:00" {
+		t.Errorf("every with a time = %q", it.Every)
+	}
+	it = &Item{Body: "every: 0 6 * * 1"}
+	it.ApplyBodyDirectives()
+	if it.Every != "0 6 * * 1" {
+		t.Errorf("cron every = %q", it.Every)
+	}
 	one := &Item{Body: "Just once."}
 	one.ApplyBodyDirectives()
 	if one.Recurring() {
 		t.Error("an item without every: is not recurring")
-	}
-	if d, err := one.Interval(); err != nil || d != 0 {
-		t.Errorf("one-shot Interval = %v, %v", d, err)
-	}
-	if _, err := (&Item{Every: "soon"}).Interval(); err == nil {
-		t.Error("an invalid schedule must be an error")
 	}
 }
 

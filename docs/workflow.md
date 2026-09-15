@@ -80,8 +80,11 @@ An item with `every: 7d` (frontmatter or a body line, see
 Each occurrence is a run like any other, with two differences:
 
 - **Start.** `loop watch --pick` and `loop run --all` start the item when
-  it is due: never run yet, or the interval has passed since the previous
-  run started. `loop run <item>` starts it at any time and is the manual
+  it is due: the interval has passed since the previous run started, or
+  a calendar time (`mon 06:00`, `0 6 * * 1`) has come and gone since
+  then. An interval item that never ran is due right away; a calendar
+  item that never ran waits for its first time after the ticket was
+  created. `loop run <item>` starts it at any time and is the manual
   trigger. The branch carries the date of the occurrence
   (`loop/<id>-<title>-20260915`), so each occurrence has its own branch and
   PR. While a previous occurrence is active, or parked as `blocked` with

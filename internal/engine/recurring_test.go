@@ -225,6 +225,62 @@ func TestRecurringItemWaitsForParkedPR(t *testing.T) {
 	}
 }
 
+func TestCalendarScheduleIsDueAtItsTimes(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		// Created on a Tuesday, runs Mondays at six.
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "lint.md"), []byte("---\ntitle: Lint sweep\ncreated: 2026-09-15\nevery: mon 06:00\n---\nSweep.\n"), 0o644)
+		os.WriteFile(filepath.Join(lc.proj, "backlog", "cron.md"), []byte("---\ntitle: Cron\ncreated: 2026-09-15\n---\nevery: 0 6 * * 1\n"), 0o644)
+	})
+	ctx := context.Background()
+	lint, err := lc.eng.Sources.Resolve(ctx, "lint.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	monday := time.Date(2026, 9, 21, 6, 0, 0, 0, time.Local)
+	lc.eng.Now = func() time.Time { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.Local) }
+	rd := lc.eng.Check(ctx, lint)
+	if !rd.Recurring || !rd.Ready || rd.Due || rd.LastRun != nil || !rd.NextDue.Equal(monday) {
+		t.Errorf("before the first Monday: %+v", rd)
+	}
+	if got := rd.Status(lint); got != "due 2026-09-21 06:00" {
+		t.Errorf("status = %q", got)
+	}
+	cron, _ := lc.eng.Sources.Resolve(ctx, "cron.md")
+	if rd := lc.eng.Check(ctx, cron); rd.ScheduleError != "" || !rd.NextDue.Equal(monday) {
+		t.Errorf("cron body line: %+v", rd)
+	}
+	// Monday 07:00: due. A run started then is next due the Monday after,
+	// and three missed Mondays still make just one due occurrence.
+	lc.eng.Now = func() time.Time { return monday.Add(time.Hour) }
+	if rd := lc.eng.Check(ctx, lint); !rd.Pickable() {
+		t.Errorf("Monday 07:00 must be due: %+v", rd)
+	}
+	r, err := lc.eng.Start(ctx, lint, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Fail(errors.New("gone"))
+	lc.eng.Store.Save(r)
+	rd = lc.eng.Check(ctx, lint)
+	if rd.Due || !rd.NextDue.Equal(monday.AddDate(0, 0, 7)) {
+		t.Errorf("after a run on Monday 07:00: %+v", rd)
+	}
+	lc.eng.Now = func() time.Time { return monday.AddDate(0, 0, 22) }
+	if rd := lc.eng.Check(ctx, lint); !rd.Due || !rd.NextDue.Equal(monday.AddDate(0, 0, 7)) {
+		t.Errorf("three weeks later it is due once: %+v", rd)
+	}
+	// The ticket note names the next calendar time, not start plus interval.
+	if note := lc.eng.nextDueNote(r); !strings.Contains(note, "due "+monday.AddDate(0, 0, 7).Format("2006-01-02 15:04")+" (every mon 06:00)") {
+		t.Errorf("next due note = %q", note)
+	}
+	// A schedule that never fires is an error, not an item that is always due.
+	os.WriteFile(filepath.Join(lc.proj, "backlog", "never.md"), []byte("---\ntitle: Never\nevery: 0 0 30 2 *\n---\nx\n"), 0o644)
+	never, _ := lc.eng.Sources.Resolve(ctx, "never.md")
+	if rd := lc.eng.Check(ctx, never); rd.Ready || rd.Due || !strings.Contains(rd.ScheduleError, "never fires") {
+		t.Errorf("never: %+v", rd)
+	}
+}
+
 func TestReadinessStatus(t *testing.T) {
 	next := time.Date(2026, 9, 22, 9, 30, 0, 0, time.Local)
 	cases := []struct {

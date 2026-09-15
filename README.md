@@ -184,8 +184,10 @@ Update every dependency to its latest compatible version and run the tests.
 
 The same line works in the body of a GitHub, GitLab or Jira ticket, so a
 pinned issue can be the home of a recurring task and collect its history
-as comments. Intervals are `7d`, `2w`, `36h`, or `hourly`, `daily`,
-`weekly`, `fortnightly`, `monthly`.
+as comments. The schedule is an interval (`7d`, `2w`, `36h`, `weekly`),
+a time (`mon 06:00`, `weekdays 07:30`, `daily 03:00`) or a cron
+expression (`0 6 * * 1`, `@daily`); calendar times are local time and a
+backlog of missed times collapses into one run.
 
 Every occurrence is an ordinary run: fresh branch (with the date in its
 name), session, verify, PR, monitor, merge. What differs is the end: the
