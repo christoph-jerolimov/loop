@@ -164,3 +164,43 @@ func TestBudgetValidation(t *testing.T) {
 		t.Errorf("budget = %+v, %v", cfg.Budget, err)
 	}
 }
+
+func TestSandboxValidation(t *testing.T) {
+	load := func(t *testing.T, body string) (*Config, error) {
+		t.Helper()
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, FileName), []byte("name: My Service\nrepo:\n  url: git@github.com:acme/widgets.git\n"+body+"sources:\n  - type: markdown\n"), 0o644)
+		return Load(dir)
+	}
+	cfg, err := load(t, "  workdir: clone\nagent:\n  skills: [skills/team]\n  sandbox:\n    image: ghcr.io/acme/harness:1\n    mounts: [\"~/.cache/go-build:/home/agent/.cache/go-build:ro\", \"cache:/home/agent/.npm\"]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb := cfg.Agent.Sandbox; sb.Runtime != "podman" || sb.Home != "loop-my-service-home" {
+		t.Errorf("sandbox defaults: %+v", sb)
+	}
+	spec := cfg.SandboxSpec()
+	home, _ := os.UserHomeDir()
+	if spec == nil || spec.Mounts[0] != filepath.Join(home, ".cache/go-build")+":/home/agent/.cache/go-build:ro" || spec.Mounts[1] != "cache:/home/agent/.npm" {
+		t.Errorf("sandbox spec: %+v", spec)
+	}
+	if m := cfg.SkillMounts(); len(m) != 1 || m[0].Path != filepath.Join(cfg.Dir, "skills/team") || !m[0].ReadOnly {
+		t.Errorf("skill mounts: %+v", m)
+	}
+	if _, err := load(t, "agent:\n  sandbox:\n    image: ghcr.io/acme/harness:1\n"); err == nil || !strings.Contains(err.Error(), "agent.sandbox needs repo.workdir: clone") {
+		t.Errorf("worktree with sandbox: %v", err)
+	}
+	if _, err := load(t, "  workdir: clone\nagent:\n  sandbox:\n    runtime: podman\n"); err == nil || !strings.Contains(err.Error(), "agent.sandbox.image is required") {
+		t.Errorf("runtime without image: %v", err)
+	}
+	if _, err := load(t, "  workdir: clone\nagent:\n  sandbox:\n    runtime: docker\n    image: x\n"); err == nil || !strings.Contains(err.Error(), "agent.sandbox.runtime must be podman or none") {
+		t.Errorf("docker runtime: %v", err)
+	}
+	if _, err := load(t, "  workdir: clone\nagent:\n  sandbox:\n    image: x\n    mounts: [\"/only-host\"]\n"); err == nil || !strings.Contains(err.Error(), "agent.sandbox.mounts entry") {
+		t.Errorf("bad mount: %v", err)
+	}
+	cfg, err = load(t, "agent:\n  sandbox:\n    runtime: none\n")
+	if err != nil || cfg.Agent.Sandbox.On() || cfg.SandboxSpec() != nil {
+		t.Errorf("runtime none: %v, %+v", err, cfg.Agent.Sandbox)
+	}
+}

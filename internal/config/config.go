@@ -221,6 +221,52 @@ type Agent struct {
 	// never inherited unless listed here.
 	EnvPassthrough []string `yaml:"env_passthrough"`
 	ExtraArgs      []string `yaml:"extra_args"`
+	// Sandbox runs every session in a container. See agent.Sandbox.
+	Sandbox Sandbox `yaml:"sandbox"`
+}
+
+// Sandbox configures the container sessions run in. Setting image turns
+// it on; the runtime is podman. It needs repo.workdir: clone, because a
+// worktree shares its .git with the base clone, which the container does
+// not see.
+type Sandbox struct {
+	Runtime string   `yaml:"runtime"`
+	Image   string   `yaml:"image"`
+	Home    string   `yaml:"home"`
+	Mounts  []string `yaml:"mounts"`
+	Args    []string `yaml:"args"`
+}
+
+// On reports whether sessions run in a container.
+func (s Sandbox) On() bool { return s.Runtime != "" && s.Runtime != "none" }
+
+// SandboxSpec is the sandbox handed to the agent package, nil when off.
+// Host paths of extra mounts are resolved like every other path in
+// loop.yaml: relative to the project folder, with ~ expanded.
+func (c *Config) SandboxSpec() *agent.Sandbox {
+	s := c.Agent.Sandbox
+	if !s.On() {
+		return nil
+	}
+	mounts := make([]string, 0, len(s.Mounts))
+	for _, m := range s.Mounts {
+		host, rest, _ := strings.Cut(m, ":")
+		if strings.ContainsAny(host, "/~") {
+			host = c.Resolve(host)
+		}
+		mounts = append(mounts, host+":"+rest)
+	}
+	return &agent.Sandbox{Runtime: s.Runtime, Image: s.Image, Home: s.Home, Mounts: mounts, Args: append([]string(nil), s.Args...)}
+}
+
+// SkillMounts are the skill folders a sandboxed session needs to see: the
+// links in the workdir point at these host paths.
+func (c *Config) SkillMounts() []agent.Mount {
+	var out []agent.Mount
+	for _, s := range c.Agent.Skills {
+		out = append(out, agent.Mount{Path: c.Resolve(s), ReadOnly: true})
+	}
+	return out
 }
 
 // Step is a shell command (run), a script file relative to loop.yaml
@@ -598,6 +644,12 @@ func (c *Config) ApplyDefaults() {
 	if c.Agent.Attempts == 0 {
 		c.Agent.Attempts = 2
 	}
+	if c.Agent.Sandbox.Image != "" && c.Agent.Sandbox.Runtime == "" {
+		c.Agent.Sandbox.Runtime = agent.Podman
+	}
+	if c.Agent.Sandbox.On() && c.Agent.Sandbox.Home == "" {
+		c.Agent.Sandbox.Home = "loop-" + item.Slug(c.Name, 40) + "-home"
+	}
 	if c.PR.Draft == nil {
 		t := true
 		c.PR.Draft = &t
@@ -727,6 +779,22 @@ func (c *Config) Validate() error {
 		}
 		if !ok {
 			errs = append(errs, fmt.Errorf("agent.permission_mode must be one of %s; got %q", strings.Join(PermissionModes, ", "), c.Agent.PermissionMode))
+		}
+	}
+	if sb := c.Agent.Sandbox; sb.On() {
+		if sb.Runtime != agent.Podman {
+			errs = append(errs, fmt.Errorf("agent.sandbox.runtime must be %s or none, got %q", agent.Podman, sb.Runtime))
+		}
+		if sb.Image == "" {
+			errs = append(errs, errors.New("agent.sandbox.image is required when the sandbox is on"))
+		}
+		if c.Repo.Workdir != "clone" {
+			errs = append(errs, errors.New("agent.sandbox needs repo.workdir: clone (a worktree shares its .git with the base clone, which the container does not see)"))
+		}
+		for _, m := range sb.Mounts {
+			if host, rest, ok := strings.Cut(m, ":"); !ok || host == "" || rest == "" {
+				errs = append(errs, fmt.Errorf("agent.sandbox.mounts entry %q must be host-path-or-volume:container-path[:options]", m))
+			}
 		}
 	}
 	switch c.Workflow.Merge {

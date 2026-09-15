@@ -78,7 +78,11 @@ func (d *doctor) run() {
 	fmt.Println("Tools")
 	d.checkTool("git", "git", "--version")
 	runner, _ := agent.Resolve(cfg.Agent.Spec()) // validated with the config
-	d.checkTool(runner.Name+" runner", runner.Command, "--version")
+	if cfg.Agent.Sandbox.On() {
+		d.checkSandbox(cfg, runner)
+	} else {
+		d.checkTool(runner.Name+" runner", runner.Command, "--version")
+	}
 	d.checkPermissions(cfg, runner)
 
 	fmt.Println("Repository")
@@ -158,6 +162,33 @@ func (d *doctor) checkPermissions(cfg *config.Config, runner *agent.Runner) {
 		return
 	}
 	d.ok("agent.allow has %d project rule(s) besides the git defaults", custom)
+}
+
+// checkSandbox checks the container runtime, that the image is present and
+// that git and the harness are inside it.
+func (d *doctor) checkSandbox(cfg *config.Config, runner *agent.Runner) {
+	sb := cfg.Agent.Sandbox
+	if _, err := exec.LookPath(sb.Runtime); err != nil {
+		d.fail("sandbox runtime: %q not found on PATH", sb.Runtime)
+		return
+	}
+	d.checkTool("sandbox runtime", sb.Runtime, "--version")
+	ctx, cancel := context.WithTimeout(d.ctx, 60*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, sb.Runtime, "image", "exists", sb.Image).Run(); err != nil {
+		d.fail("sandbox image %s is not present; pull or build it first", sb.Image)
+		return
+	}
+	d.ok("sandbox image %s is present", sb.Image)
+	for _, bin := range []string{"git", runner.Command} {
+		out, err := exec.CommandContext(ctx, sb.Runtime, "run", "--rm", "--entrypoint", bin, sb.Image, "--version").Output()
+		if err != nil {
+			d.fail("%s is not runnable in image %s: %v", bin, sb.Image, firstLine(err.Error()))
+			continue
+		}
+		v := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+		d.ok("%s in image: %s", bin, v)
+	}
 }
 
 func (d *doctor) checkTool(label, bin string, args ...string) {

@@ -45,6 +45,11 @@ type Options struct {
 	Progress io.Writer
 	// Paint colours the progress lines; the zero value writes plain text.
 	Paint term.Painter
+	// Sandbox, when set, runs the harness in a container that sees the
+	// workdir, RunDir and Mounts at their host paths.
+	Sandbox *Sandbox
+	RunDir  string
+	Mounts  []Mount
 }
 
 // Result summarises a finished session.
@@ -242,14 +247,31 @@ func (r *Runner) Run(ctx context.Context, o Options) (*Result, error) {
 // sessionFromCommand runs a preparatory command (Cursor's create-chat) and
 // returns its trimmed output; an empty id just means no resume flag.
 func (r *Runner) sessionFromCommand(ctx context.Context, o Options, args []string) string {
-	cmd := exec.CommandContext(ctx, r.Command, args...)
-	cmd.Dir = o.Workdir
-	cmd.Env = SessionEnv(o.EnvPassthrough, o.Env)
+	cmd, container := command(ctx, o, r.Command, args, false)
 	out, err := cmd.Output()
+	if container != "" && ctx.Err() != nil {
+		o.Sandbox.kill(container)
+	}
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// command builds the harness process in the workdir with the session
+// environment; with a sandbox it is the container runtime instead, and the
+// returned container name is what to remove if the client is killed.
+func command(ctx context.Context, o Options, name string, args []string, stdin bool) (*exec.Cmd, string) {
+	env := SessionEnv(o.EnvPassthrough, o.Env)
+	container := ""
+	if o.Sandbox != nil {
+		container, args = o.Sandbox.runArgs(o, name, args, env, stdin)
+		name, env = o.Sandbox.Runtime, o.Sandbox.clientEnv(env)
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = o.Workdir
+	cmd.Env = env
+	return cmd, container
 }
 
 // JoinCommand is what a human types to continue the session.
@@ -371,9 +393,7 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 		ctx, cancel = context.WithTimeout(ctx, o.Timeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = o.Workdir
-	cmd.Env = SessionEnv(o.EnvPassthrough, o.Env)
+	cmd, container := command(ctx, o, name, args, stdin != "")
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -446,6 +466,9 @@ func runProcess(ctx context.Context, o Options, name string, args []string, stdi
 	}
 	werr := cmd.Wait()
 	res.Duration = time.Since(start)
+	if container != "" && ctx.Err() != nil {
+		o.Sandbox.kill(container)
+	}
 	if res.Output == "" {
 		res.Output = lastText.String()
 	}

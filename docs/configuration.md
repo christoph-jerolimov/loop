@@ -186,6 +186,7 @@ See [prompts.md](prompts.md).
 | `env` | none | Extra environment variables for sessions and steps. |
 | `env_passthrough` | none | Variable names or globs (`DATABASE_URL`, `MY_APP_*`) sessions inherit from loop's environment on top of the built-in allowlist. See below. |
 | `extra_args` | none | Extra CLI arguments, appended after the template. |
+| `sandbox` | off | Run every session in a podman container that sees only the workdir and the run folder. See [sandbox](#sandbox). |
 
 ### Harnesses
 
@@ -321,6 +322,92 @@ agent:
 
 `run:` and `script:` steps are your own scripts and keep the full
 environment; `agent:` steps are sessions and get the allowlist.
+
+### Sandbox
+
+With `agent.sandbox` every session runs in a container instead of on the
+host. The container sees the run's checkout and its run folder and nothing
+else of the machine: no code host token, no SSH agent, no project folder,
+no other run.
+
+```yaml
+repo:
+  workdir: clone                    # required with a sandbox
+agent:
+  sandbox:
+    image: ghcr.io/acme/loop-harness:1   # git plus the harness CLI and your toolchain
+    # runtime: podman                # the only runtime; set by image
+    # home: loop-my-service-home     # named volume for the home directory inside
+    # mounts: ["~/.cache/go-build:/home/agent/.cache/go-build:ro"]
+    # args: ["--memory=4g", "--pids-limit=512"]
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `image` | none | The container image. Setting it turns the sandbox on. It must contain `git` and the harness command; `loop doctor` checks both. |
+| `runtime` | `podman` when `image` is set | `podman` or `none`. |
+| `home` | `loop-<name>-home` | Named volume mounted as `/home/agent`, the home directory inside the container. Logins and session transcripts live there, so a later session, and `loop join`, find them. |
+| `mounts` | none | Extra mounts in podman's `-v` syntax: `host-path-or-volume:container-path[:options]`. Host paths are resolved like other paths in `loop.yaml`, so `~/` and paths relative to the project folder work. Toolchain caches are the typical use. |
+| `args` | none | Extra `podman run` arguments, placed before the image: resource limits, a `--network` choice, labels. |
+
+What the session gets:
+
+- **The workdir**, read-write, at its host path. The agent edits and
+  commits there; loop reads the commits back on the host afterwards.
+  `repo.workdir` must be `clone`: a worktree's `.git` points into the base
+  clone, which the container does not see, and a clone per run also keeps
+  concurrent runs apart.
+- **The run folder** (`.loop/runs/<run>/`), read-write, at its host path.
+  The prompt file is there, and so are the summary, plan and findings files
+  the agent writes.
+- **Skill folders** from `agent.skills`, read-only, at their host paths, so
+  the links in `<workdir>/.claude/skills/` resolve.
+- **The home volume**, read-write, as `/home/agent`.
+- **The environment** of a session (see above) minus everything that is a
+  host path or socket: `PATH`, `HOME`, `TMPDIR`, `XDG_*`, `SSH_AUTH_SOCK`,
+  `GOPATH`, `GOCACHE`, `NVM_*`, `JAVA_HOME`, `VIRTUAL_ENV`, `DOCKER_HOST`
+  and the like stay out, because the image has its own. Credentials and
+  configuration of the harness (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...), proxy settings, locale, git
+  identity, the `LOOP_*` variables, `agent.env` and `env_passthrough` are
+  forwarded by name, so their values never appear on a command line.
+
+The container runs as your user (`--userns=keep-id`), so files it writes
+into the checkout are yours, with all capabilities dropped and
+`no-new-privileges`. It is removed when the session ends, and a session
+that hits `agent.timeout` is stopped with `podman rm -f`. Network access
+stays on, because the harness has to reach its model provider; add
+`--network` options in `args` to restrict it. Every path is mounted at the
+same location inside and outside, which is why the container needs no
+path translation and `{workdir}`, `LOOP_RUN_DIR` and `loop logs --prompt`
+mean the same thing on both sides.
+
+Authentication is the harness's own business, as without a sandbox. An
+API key in the environment is the simplest way. For a login that lives in
+the home directory, log in once into the home volume:
+
+```sh
+podman run --rm -it -v loop-my-service-home:/home/agent -e HOME=/home/agent \
+  --userns=keep-id ghcr.io/acme/loop-harness:1 claude login
+```
+
+An image is a `Containerfile` with git, the harness and the project's
+toolchain; loop ships none, because the toolchain is the project's. The
+smallest useful one for Claude Code and a Node project:
+
+```dockerfile
+FROM docker.io/library/node:22
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code
+RUN mkdir -p /home/agent && chmod 777 /home/agent
+ENV HOME=/home/agent
+```
+
+`run:` and `script:` steps still run on the host with the full
+environment; only sessions are sandboxed. On macOS podman runs in a
+virtual machine that mounts your home directory by default; a project
+elsewhere needs the machine configured with that path.
 
 How the prompt reaches the agent is part of the harness profile (see
 [harnesses](#harnesses)): every prompt is a file in the run folder first,

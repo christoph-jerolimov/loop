@@ -872,7 +872,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	}
 	defer logf.Close()
 	sess := state.Session{Kind: kind, Started: time.Now(), LogFile: logPath}
-	e.logf(r, "starting %s session (%s%s)", kind, e.Runner.Name, modelSuffix(model))
+	e.logf(r, "starting %s session (%s%s%s)", kind, e.Runner.Name, modelSuffix(model), sandboxSuffix(e.Cfg))
 	env := e.env(r)
 	env["LOOP_PROMPT_FILE"] = promptPath
 	for _, m := range extra {
@@ -884,6 +884,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 		Workdir: r.Workdir, PromptFile: promptPath, Model: model, PermissionMode: e.Cfg.Agent.PermissionMode,
 		MaxTurns: e.Cfg.Agent.MaxTurns, Timeout: timeout, Env: env, EnvPassthrough: e.Cfg.Agent.EnvPassthrough,
 		Log: logf, Progress: e.Out, Paint: e.Paint,
+		Sandbox: e.Cfg.SandboxSpec(), RunDir: r.Dir(), Mounts: e.Cfg.SkillMounts(),
 	})
 	sess.Ended = time.Now()
 	if res != nil {
@@ -895,7 +896,7 @@ func (e *Engine) runAgent(ctx context.Context, r *state.Run, kind, text, model s
 	r.Sessions = append(r.Sessions, sess)
 	_ = e.Store.Save(r)
 	if res != nil && res.SessionID != "" {
-		e.logf(r, "session %s ended after %s; join with: %s", sess.ID, res.Duration.Round(time.Second), e.Runner.JoinCommand(r.Workdir, res.SessionID))
+		e.logf(r, "session %s ended after %s; join with: %s", sess.ID, res.Duration.Round(time.Second), e.JoinCommand(r, res.SessionID))
 	}
 	if err != nil {
 		return res, err
@@ -911,6 +912,23 @@ func modelSuffix(m string) string {
 		return ""
 	}
 	return ", model " + m
+}
+
+func sandboxSuffix(cfg *config.Config) string {
+	if !cfg.Agent.Sandbox.On() {
+		return ""
+	}
+	return ", in " + cfg.Agent.Sandbox.Runtime + " image " + cfg.Agent.Sandbox.Image
+}
+
+// JoinCommand is what a human types to continue the run's session: in the
+// workdir, or in the same container when sessions are sandboxed.
+func (e *Engine) JoinCommand(r *state.Run, sessionID string) string {
+	sb := e.Cfg.SandboxSpec()
+	if sb == nil {
+		return e.Runner.JoinCommand(r.Workdir, sessionID)
+	}
+	return sb.JoinCommand(e.Runner, r.Workdir, r.Dir(), sessionID, e.Cfg.SkillMounts(), e.Cfg.Agent.EnvPassthrough)
 }
 
 func (e *Engine) session(ctx context.Context, r *state.Run) error {

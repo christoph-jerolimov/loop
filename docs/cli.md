@@ -67,7 +67,7 @@ Run every check a run depends on, before any worktree is created:
 | Group | Checks |
 | --- | --- |
 | Configuration | `loop.yaml` parses and validates; prompt templates render; step scripts exist and are executable; agent prompts and skill folders exist. |
-| Tools | `git` and the harness command (`claude`, `agent` for Cursor, `codex`, `gemini`, `aider`, `opencode`, `copilot`, `amp`, or the custom command) are on the `PATH`; for Claude a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
+| Tools | `git` and the harness command (`claude`, `agent` for Cursor, `codex`, `gemini`, `aider`, `opencode`, `copilot`, `amp`, or the custom command) are on the `PATH`; with a [sandbox](configuration.md#sandbox), `podman` is on the `PATH` instead, the image is present, and `git` and the harness run inside it. For Claude a warning when `agent.allow` holds only the default git rules or `permission_mode` bypasses all checks. |
 | Repository | `repo.url` is reachable and has the base branch. |
 | Credentials | The GitHub or GitLab token is accepted, can push to the repository, and the default branch matches `repo.base` (warning otherwise). Jira credentials are accepted for every Jira site. |
 | Sources | Every source can be listed; the number of open items is shown, every `every:` schedule parses, and for GitHub and GitLab sources whether ticket comments are loaded and why. |
@@ -200,7 +200,10 @@ comment on the PR from a collaborator with push access does the same.
 
 Print the command that opens the run's workdir and resumes its latest
 agent session, for example `cd .loop/workdirs/… && claude --resume <id>`.
-Fails with a pointer to `loop resume` when the checkout was removed.
+With a [sandbox](configuration.md#sandbox) it is a `podman run -it` with
+the same mounts and home volume the session had, so the resumed session
+finds its transcript. Fails with a pointer to `loop resume` when the
+checkout was removed.
 
 ## `loop clean [run]`
 

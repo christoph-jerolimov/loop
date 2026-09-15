@@ -5,7 +5,7 @@ repo:
   url: [[.URL]]   # github.com or gitlab URLs are recognised
   # github: my-org/my-service   (derived from url; or gitlab: group/project + gitlab_url)
   base: [[.Base]]
-  workdir: worktree          # worktree (default, fast) or clone
+  workdir: worktree          # worktree (default, fast) or clone (required with agent.sandbox)
   branch_prefix: loop/
 
 # Backlog sources, in pick-up order. Within a source the oldest item is
@@ -104,6 +104,10 @@ agent:
   # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN, GITLAB_TOKEN or JIRA_*
   # skills:                  # folders symlinked into <workdir>/.claude/skills
   #   - ~/skills/my-team-conventions
+  # sandbox:                 # run sessions in a podman container that sees only the checkout and run folder
+  #   image: ghcr.io/acme/loop-harness:1   # git, the harness CLI and your toolchain; needs repo.workdir: clone
+  #   mounts: ["~/.cache/go-build:/home/agent/.cache/go-build:ro"]
+  #   args: ["--memory=4g"]
 
 # Steps run inside the workdir. Each is one of:
 #   run: <shell command>        script: <file relative to loop.yaml>        agent: <prompt template>

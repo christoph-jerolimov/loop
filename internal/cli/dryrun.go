@@ -31,6 +31,9 @@ func dryRun(a *app, it *item.Item, rd engine.Readiness) error {
 		model = "harness default"
 	}
 	fmt.Printf("harness:       %s (%s), model %s, %d attempt(s), timeout %s\n", e.Runner.Name, e.Runner.Command, model, cfg.Agent.Attempts, cfg.Agent.Timeout.D())
+	if sb := cfg.Agent.Sandbox; sb.On() {
+		fmt.Printf("sandbox:       %s image %s, home volume %s\n", sb.Runtime, sb.Image, sb.Home)
+	}
 	fmt.Printf("phases:        %s\n", phaseLine(cfg))
 	for _, ph := range []string{"setup", "verify", "before_pr", "merged", "cleanup", "blocked", "failed"} {
 		if steps := cfg.Steps.All()[ph]; len(steps) > 0 {

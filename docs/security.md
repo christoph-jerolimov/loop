@@ -23,6 +23,16 @@ keep that contained and what remains your decision.
 - **Pushing and merging** are done by loop with your token, behind the
   merge policy and gates you configure. With `merge: manual` nothing lands
   on the base branch without a human.
+- **The machine.** Without a sandbox the agent runs as you, with your
+  files and your network. `agent.sandbox` runs every session in a podman
+  container that sees the run's checkout, its run folder and a home volume
+  and nothing else: no project folder, no other run, no SSH agent, no
+  tokens beyond the harness's own. That turns the withheld credentials
+  into a wall for the harnesses that run with an auto-approve flag, and it
+  means `git push` cannot succeed from inside whatever the agent does (see
+  [sandbox](configuration.md#sandbox)). What is still yours to decide is
+  the network: the container needs to reach the model provider, so
+  outbound access stays on unless you restrict it with `--network` options.
 
 ## Prompt injection from tickets
 
@@ -36,7 +46,8 @@ reliable way to.
 What limits the damage:
 
 - The environment and command allowlists above: an injected instruction
-  cannot exfiltrate loop's tokens or push on its own.
+  cannot exfiltrate loop's tokens or push on its own. With a sandbox it
+  cannot read anything of the machine beyond the checkout either.
 - Verify steps run before every push, so the tests you configure still have
   to pass.
 - Every session's exact prompt is kept in the run folder (`loop logs <run>

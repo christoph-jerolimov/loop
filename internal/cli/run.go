@@ -298,7 +298,7 @@ var joinCmd = &cobra.Command{
 				break
 			}
 		}
-		fmt.Println(a.Engine.Runner.JoinCommand(r.Workdir, sessionID))
+		fmt.Println(a.Engine.JoinCommand(r, sessionID))
 		return nil
 	},
 }
