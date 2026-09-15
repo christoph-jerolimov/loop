@@ -295,7 +295,7 @@ func TestInitDetectsToolchain(t *testing.T) {
 				os.WriteFile(filepath.Join(repo, name), []byte(content), 0o644)
 			}
 			dir := filepath.Join(t.TempDir(), "proj")
-			out, err := execute(t, &project{dir: repo}, "init", dir)
+			out, err := execute(t, &project{dir: repo}, "init", "--no-doctor", dir)
 			if err != nil {
 				t.Fatalf("init: %v\n%s", err, out)
 			}
@@ -319,6 +319,34 @@ func TestInitDetectsToolchain(t *testing.T) {
 	}
 }
 
+func TestInitRunsDoctorWhenTheRepositoryIsKnown(t *testing.T) {
+	// A local bare remote as origin: detected, but no host can be derived,
+	// so the doctor's configuration check fails and init says so.
+	p := newProject(t)
+	root := filepath.Dir(p.dir)
+	repo := filepath.Join(root, "checkout")
+	git(t, root, "clone", "-q", filepath.Join(root, "remote.git"), repo)
+	dir := filepath.Join(root, "checkout-loop")
+	out, err := execute(t, &project{dir: repo}, "init", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Configuration\n", "FAIL  ", "neither repo.github", "1 check(s) failed. Next steps:", "fix the failed checks above, then: loop doctor"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("init should run the doctor and report its outcome, missing %q:\n%s", want, out)
+		}
+	}
+	// --no-doctor skips the checks; without a detected repository there is nothing to check yet.
+	out, _ = execute(t, &project{dir: repo}, "init", "--no-doctor", "--force", dir)
+	if strings.Contains(out, "Configuration\n") || !strings.Contains(out, "loop run my-idea.md") {
+		t.Errorf("--no-doctor:\n%s", out)
+	}
+	out, _ = execute(t, &project{dir: root}, "init", filepath.Join(root, "plain"))
+	if strings.Contains(out, "Configuration\n") || !strings.Contains(out, "2. loop doctor") {
+		t.Errorf("placeholders: doctor is a next step, not run:\n%s", out)
+	}
+}
+
 func TestInitChoosesSources(t *testing.T) {
 	// No token anywhere: only the markdown backlog.
 	t.Setenv("GITHUB_TOKEN", "")
@@ -337,7 +365,7 @@ func TestInitChoosesSources(t *testing.T) {
 		return strings.Join(out, ",")
 	}
 	dir := filepath.Join(t.TempDir(), "md")
-	out, err := execute(t, p, "init", "--repo", "https://github.com/acme/widgets.git", dir)
+	out, err := execute(t, p, "init", "--no-doctor", "--repo", "https://github.com/acme/widgets.git", dir)
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
@@ -347,18 +375,18 @@ func TestInitChoosesSources(t *testing.T) {
 	// The host's token is set: its issue source is added.
 	t.Setenv("GITHUB_TOKEN", "x")
 	dir = filepath.Join(t.TempDir(), "gh")
-	out, _ = execute(t, p, "init", "--repo", "https://github.com/acme/widgets.git", dir)
+	out, _ = execute(t, p, "init", "--no-doctor", "--repo", "https://github.com/acme/widgets.git", dir)
 	if got := types(dir); got != "markdown,github" || !strings.Contains(out, "adding  github issues source") {
 		t.Errorf("with GITHUB_TOKEN: sources = %s\n%s", got, out)
 	}
 	// A GitLab repository with only a GitHub token gets no host source; --source decides explicitly.
 	dir = filepath.Join(t.TempDir(), "gl")
-	execute(t, p, "init", "--repo", "https://gitlab.com/g/tool.git", dir)
+	execute(t, p, "init", "--no-doctor", "--repo", "https://gitlab.com/g/tool.git", dir)
 	if got := types(dir); got != "markdown" {
 		t.Errorf("gitlab repo without GITLAB_TOKEN: sources = %s", got)
 	}
 	dir = filepath.Join(t.TempDir(), "explicit")
-	execute(t, p, "init", "--repo", "https://gitlab.com/g/tool.git", "--source", "gitlab,jira", dir)
+	execute(t, p, "init", "--no-doctor", "--repo", "https://gitlab.com/g/tool.git", "--source", "gitlab,jira", dir)
 	if got := types(dir); got != "markdown,gitlab,jira" {
 		t.Errorf("--source gitlab,jira: sources = %s", got)
 	}
@@ -413,7 +441,7 @@ func TestInitDetectsRepositoryFromCheckout(t *testing.T) {
 
 	// The project folder (-C) is the checkout; the loop project goes next to it.
 	dir := filepath.Join(root, "widgets-loop")
-	out, err := execute(t, &project{dir: repo}, "init", dir)
+	out, err := execute(t, &project{dir: repo}, "init", "--no-doctor", dir)
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
@@ -423,7 +451,7 @@ func TestInitDetectsRepositoryFromCheckout(t *testing.T) {
 			t.Errorf("loop.yaml lacks %q:\n%s", want, cfg)
 		}
 	}
-	if !strings.Contains(out, "using   https://github.com/acme/widgets.git (origin of "+repo+")") || !strings.Contains(out, "check loop.yaml") {
+	if !strings.Contains(out, "using   https://github.com/acme/widgets.git (origin of "+repo+")") || !strings.Contains(out, "loop run my-idea.md") {
 		t.Errorf("init should say what it detected:\n%s", out)
 	}
 	if loadConfig(t, &project{dir: dir}).Repo.GitHub != "acme/widgets" {
@@ -432,7 +460,7 @@ func TestInitDetectsRepositoryFromCheckout(t *testing.T) {
 
 	// --repo wins over the checkout; the name comes from the URL.
 	dir2 := filepath.Join(root, "other")
-	if _, err := execute(t, &project{dir: repo}, "init", "--repo", "https://gitlab.example.com/g/sub/tool.git", dir2); err != nil {
+	if _, err := execute(t, &project{dir: repo}, "init", "--no-doctor", "--repo", "https://gitlab.example.com/g/sub/tool.git", dir2); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ = os.ReadFile(filepath.Join(dir2, "loop.yaml"))
