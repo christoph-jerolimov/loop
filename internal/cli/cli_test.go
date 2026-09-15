@@ -146,10 +146,15 @@ func executeCtx(t *testing.T, ctx context.Context, p *project, args ...string) (
 
 func resetFlags(cmd *cobra.Command) {
 	reset := func(f *pflag.Flag) {
-		if f.Changed {
-			_ = f.Value.Set(f.DefValue)
-			f.Changed = false
+		if !f.Changed {
+			return
 		}
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			_ = sv.Replace(nil) // the textual default "[]" would become one element
+		} else {
+			_ = f.Value.Set(f.DefValue)
+		}
+		f.Changed = false
 	}
 	cmd.Flags().VisitAll(reset)
 	cmd.PersistentFlags().VisitAll(reset)

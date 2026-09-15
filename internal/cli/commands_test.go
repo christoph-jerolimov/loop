@@ -260,6 +260,52 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	}
 }
 
+func TestInitChoosesSources(t *testing.T) {
+	// No token anywhere: only the markdown backlog.
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("PATH", t.TempDir()) // no gh binary either
+	p := &project{dir: t.TempDir()}
+	types := func(dir string) string {
+		cfg := loadConfig(t, &project{dir: dir})
+		var out []string
+		for _, s := range cfg.Sources {
+			out = append(out, s.Type)
+		}
+		return strings.Join(out, ",")
+	}
+	dir := filepath.Join(t.TempDir(), "md")
+	out, err := execute(t, p, "init", "--repo", "https://github.com/acme/widgets.git", dir)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if got := types(dir); got != "markdown" {
+		t.Errorf("without a token: sources = %s, want markdown only\n%s", got, out)
+	}
+	// The host's token is set: its issue source is added.
+	t.Setenv("GITHUB_TOKEN", "x")
+	dir = filepath.Join(t.TempDir(), "gh")
+	out, _ = execute(t, p, "init", "--repo", "https://github.com/acme/widgets.git", dir)
+	if got := types(dir); got != "markdown,github" || !strings.Contains(out, "adding  github issues source") {
+		t.Errorf("with GITHUB_TOKEN: sources = %s\n%s", got, out)
+	}
+	// A GitLab repository with only a GitHub token gets no host source; --source decides explicitly.
+	dir = filepath.Join(t.TempDir(), "gl")
+	execute(t, p, "init", "--repo", "https://gitlab.com/g/tool.git", dir)
+	if got := types(dir); got != "markdown" {
+		t.Errorf("gitlab repo without GITLAB_TOKEN: sources = %s", got)
+	}
+	dir = filepath.Join(t.TempDir(), "explicit")
+	execute(t, p, "init", "--repo", "https://gitlab.com/g/tool.git", "--source", "gitlab,jira", dir)
+	if got := types(dir); got != "markdown,gitlab,jira" {
+		t.Errorf("--source gitlab,jira: sources = %s", got)
+	}
+	if _, err := execute(t, p, "init", "--source", "trello", filepath.Join(t.TempDir(), "bad")); err == nil || !strings.Contains(err.Error(), "--source must be") {
+		t.Errorf("unknown source: %v", err)
+	}
+}
+
 func TestInitPromptsWritesCopiesAndPointsAtThem(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "new")
 	p := &project{dir: t.TempDir()}
