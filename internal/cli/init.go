@@ -44,7 +44,11 @@ add to loop.yaml.
 
 The backlog starts as a markdown folder. --source github, gitlab or jira
 adds a source of that type; a source for the repository's own host is
-added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.`,
+added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.
+
+When the checkout reveals its toolchain (go.mod, package.json, Cargo.toml,
+pyproject.toml, pom.xml, build.gradle, a Makefile with a test target),
+its test command becomes the verify step and the session may run it.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -61,6 +65,10 @@ added when its token (GITHUB_TOKEN or gh, GITLAB_TOKEN) is available.`,
 		}
 		if err := det.chooseSources(initSources); err != nil {
 			return err
+		}
+		det.detectToolchain()
+		if det.Test != "" {
+			fmt.Printf("using   %q as verify step and allowing it in agent.allow (%s found)\n", det.Test, det.Marker)
 		}
 		cfg, err := renderScaffold("scaffold/loop.yaml", det)
 		if err != nil {
@@ -132,6 +140,68 @@ type repoDetection struct {
 	Prompts bool
 	// GitHub, GitLab and Jira enable the respective issue source.
 	GitHub, GitLab, Jira bool
+	// Checkout is the git checkout the repository was detected in.
+	Checkout string
+	// Test is the detected test command for steps.verify, Allow the
+	// permission rules it needs; Marker the file that revealed them.
+	Test   string
+	Allow  []string
+	Marker string
+}
+
+// toolchain maps a marker file in the checkout to its test command and
+// the permission rules a headless session needs for it.
+type toolchain struct {
+	marker string
+	test   string
+	allow  []string
+	// lock narrows the match: the file must exist too.
+	lock string
+}
+
+var toolchains = []toolchain{
+	{marker: "go.mod", test: "go test ./...", allow: []string{"Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)"}},
+	{marker: "package.json", lock: "pnpm-lock.yaml", test: "pnpm test", allow: []string{"Bash(pnpm install:*)", "Bash(pnpm test:*)", "Bash(pnpm run:*)"}},
+	{marker: "package.json", lock: "yarn.lock", test: "yarn test", allow: []string{"Bash(yarn install:*)", "Bash(yarn test:*)", "Bash(yarn run:*)"}},
+	{marker: "package.json", lock: "bun.lockb", test: "bun test", allow: []string{"Bash(bun install:*)", "Bash(bun test:*)", "Bash(bun run:*)"}},
+	{marker: "package.json", test: "npm test", allow: []string{"Bash(npm ci:*)", "Bash(npm install:*)", "Bash(npm test:*)", "Bash(npm run:*)"}},
+	{marker: "Cargo.toml", test: "cargo test", allow: []string{"Bash(cargo build:*)", "Bash(cargo test:*)", "Bash(cargo clippy:*)"}},
+	{marker: "pyproject.toml", test: "pytest", allow: []string{"Bash(pytest:*)", "Bash(python -m pytest:*)", "Bash(pip install:*)"}},
+	{marker: "pom.xml", test: "mvn -q test", allow: []string{"Bash(mvn:*)"}},
+	{marker: "build.gradle", test: "./gradlew test", allow: []string{"Bash(./gradlew:*)"}},
+	{marker: "build.gradle.kts", test: "./gradlew test", allow: []string{"Bash(./gradlew:*)"}},
+	{marker: "Makefile", test: "make test", allow: []string{"Bash(make:*)"}},
+}
+
+// detectToolchain fills Test, Allow and Marker from the checkout. A
+// Makefile counts only with a test target.
+func (d *repoDetection) detectToolchain() {
+	if d.Checkout == "" {
+		return
+	}
+	exists := func(name string) bool {
+		_, err := os.Stat(filepath.Join(d.Checkout, name))
+		return err == nil
+	}
+	for _, tc := range toolchains {
+		if !exists(tc.marker) || (tc.lock != "" && !exists(tc.lock)) {
+			continue
+		}
+		if tc.marker == "Makefile" {
+			b, _ := os.ReadFile(filepath.Join(d.Checkout, "Makefile"))
+			if !strings.Contains("\n"+string(b), "\ntest:") {
+				continue
+			}
+		}
+		// Setting agent.allow replaces the defaults, so the git rules a
+		// session needs to commit come along.
+		d.Test, d.Marker = tc.test, tc.marker
+		d.Allow = append(append([]string{}, config.DefaultAllow...), tc.allow...)
+		if tc.lock != "" {
+			d.Marker += " + " + tc.lock
+		}
+		return
+	}
 }
 
 // chooseSources enables the sources named with --source and, without
@@ -200,7 +270,7 @@ func detectRepo(ctx context.Context, dir, projectDir, flag string) repoDetection
 			if err != nil || url == "" {
 				continue
 			}
-			det.URL, det.From = url, "origin of "+top
+			det.URL, det.From, det.Checkout = url, "origin of "+top, top
 			if head, err := gitx.Run(ctx, top, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
 				det.Base = strings.TrimPrefix(head, "origin/")
 			}

@@ -91,12 +91,14 @@ agent:
   permission_mode: acceptEdits # or bypassPermissions to skip all checks
   # Permission rules written to <workdir>/.claude/settings.local.json. The
   # defaults allow git add/commit and deny git push; add your own commands.
-  # allow:
+[[if .Allow]]  allow:
+[[range .Allow]]    - "[[.]]"
+[[end]][[else]]  # allow:
   #   - "Bash(git status:*)"
   #   - "Bash(git add:*)"
   #   - "Bash(git commit:*)"
   #   - "Bash(npm test:*)"
-  timeout: 45m
+[[end]]  timeout: 45m
   max_turns: 200
   attempts: 2                # retries for the initial session
   # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN, GITLAB_TOKEN or JIRA_*
@@ -111,10 +113,13 @@ steps:
   setup: []                  # after checkout, before the session
     # - run: npm ci
     # - script: hooks/setup.sh   # e.g. copy a .env into the workdir
-  verify: []                 # after the session; a failing run/script step starts a fix session
+[[if .Test]]  verify:                    # after the session; a failing run/script step starts a fix session
+    - name: tests
+      run: [[.Test]]
+[[else]]  verify: []                 # after the session; a failing run/script step starts a fix session
     # - name: tests
     #   run: npm test
-    # - name: self-review
+[[end]]    # - name: self-review
     #   agent: prompts/self-review.md
   before_pr: []              # after verify, before the push
   merged: []                 # after the PR merged

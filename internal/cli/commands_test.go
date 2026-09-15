@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/christoph-jerolimov/loop/internal/config"
 	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/state"
 )
@@ -262,12 +265,68 @@ func TestInitScaffoldsAProject(t *testing.T) {
 	}
 }
 
+func TestInitDetectsToolchain(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	if _, err := exec.LookPath("gh"); err == nil {
+		t.Skip("gh is installed and may hold a token")
+	}
+	cases := []struct {
+		name   string
+		files  map[string]string
+		test   string
+		allow  string
+		marker string
+	}{
+		{"go", map[string]string{"go.mod": "module x\n"}, "go test ./...", "Bash(go test:*)", "go.mod found"},
+		{"pnpm", map[string]string{"package.json": "{}", "pnpm-lock.yaml": ""}, "pnpm test", "Bash(pnpm test:*)", "package.json + pnpm-lock.yaml found"},
+		{"npm", map[string]string{"package.json": "{}"}, "npm test", "Bash(npm test:*)", "package.json found"},
+		{"make with test target", map[string]string{"Makefile": "build:\n\tgo build\ntest:\n\tgo test\n"}, "make test", "Bash(make:*)", "Makefile found"},
+		{"make without test target", map[string]string{"Makefile": "build:\n\tgo build\n"}, "", "", ""},
+		{"nothing", nil, "", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo := filepath.Join(t.TempDir(), "widgets")
+			os.MkdirAll(repo, 0o755)
+			git(t, repo, "init", "-q")
+			git(t, repo, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+			for name, content := range c.files {
+				os.WriteFile(filepath.Join(repo, name), []byte(content), 0o644)
+			}
+			dir := filepath.Join(t.TempDir(), "proj")
+			out, err := execute(t, &project{dir: repo}, "init", dir)
+			if err != nil {
+				t.Fatalf("init: %v\n%s", err, out)
+			}
+			cfg := loadConfig(t, &project{dir: dir})
+			if c.test == "" {
+				if len(cfg.Steps.Verify) != 0 || len(cfg.Agent.Allow) != len(config.DefaultAllow) || strings.Contains(out, "verify step") {
+					t.Errorf("nothing should be detected: verify=%+v allow=%v\n%s", cfg.Steps.Verify, cfg.Agent.Allow, out)
+				}
+				return
+			}
+			if len(cfg.Steps.Verify) != 1 || cfg.Steps.Verify[0].Run != c.test || cfg.Steps.Verify[0].Name != "tests" {
+				t.Errorf("verify = %+v, want run %q", cfg.Steps.Verify, c.test)
+			}
+			if !strings.Contains(strings.Join(cfg.Agent.Allow, " "), c.allow) || !strings.Contains(strings.Join(cfg.Agent.Allow, " "), "Bash(git commit:*)") {
+				t.Errorf("allow = %v, want %q and the default git rules", cfg.Agent.Allow, c.allow)
+			}
+			if !strings.Contains(out, "using   "+strconv.Quote(c.test)+" as verify step") || !strings.Contains(out, c.marker) {
+				t.Errorf("init should say what it detected:\n%s", out)
+			}
+		})
+	}
+}
+
 func TestInitChoosesSources(t *testing.T) {
 	// No token anywhere: only the markdown backlog.
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITLAB_TOKEN", "")
-	t.Setenv("PATH", t.TempDir()) // no gh binary either
+	if _, err := exec.LookPath("gh"); err == nil {
+		t.Skip("gh is installed and may hold a token")
+	}
 	p := &project{dir: t.TempDir()}
 	types := func(dir string) string {
 		cfg := loadConfig(t, &project{dir: dir})
