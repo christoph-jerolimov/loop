@@ -25,15 +25,16 @@ const StateDir = ".loop"
 
 // Config is the root of loop.yaml.
 type Config struct {
-	Name     string         `yaml:"name"`
-	Repo     Repo           `yaml:"repo"`
-	Sources  []SourceConfig `yaml:"sources"`
-	Prompts  Prompts        `yaml:"prompts"`
-	Agent    Agent          `yaml:"agent"`
-	Steps    Steps          `yaml:"steps"`
-	PR       PR             `yaml:"pr"`
-	Workflow Workflow       `yaml:"workflow"`
-	Budget   Budget         `yaml:"budget"`
+	Name      string         `yaml:"name"`
+	Repo      Repo           `yaml:"repo"`
+	Sources   []SourceConfig `yaml:"sources"`
+	Prompts   Prompts        `yaml:"prompts"`
+	Agent     Agent          `yaml:"agent"`
+	Steps     Steps          `yaml:"steps"`
+	PR        PR             `yaml:"pr"`
+	Workflow  Workflow       `yaml:"workflow"`
+	Budget    Budget         `yaml:"budget"`
+	Retention Retention      `yaml:"retention"`
 
 	// Dir is the directory that contains loop.yaml. Not part of the file.
 	Dir string `yaml:"-"`
@@ -356,6 +357,30 @@ type Budget struct {
 	DailyRuns int `yaml:"daily_runs"`
 }
 
+// Retention says how long finished runs keep what they leave on disk. Run
+// folders (run.yaml, logs, prompts) are always kept; only checkouts are
+// removed.
+type Retention struct {
+	// Workdirs removes the checkout of a done, failed or blocked run this
+	// long after the run last changed. loop watch applies it; loop clean
+	// --older-than uses the same rule by hand. Unset means
+	// DefaultWorkdirRetention; an explicit 0 keeps every checkout until
+	// loop clean.
+	Workdirs *Duration `yaml:"workdirs"`
+}
+
+// WorkdirAge is the configured retention of checkouts; 0 means keep.
+func (r Retention) WorkdirAge() time.Duration {
+	if r.Workdirs == nil {
+		return 0
+	}
+	return r.Workdirs.D()
+}
+
+// DefaultWorkdirRetention is how long finished runs keep their checkout
+// when loop.yaml does not say.
+const DefaultWorkdirRetention = 7 * 24 * time.Hour
+
 // Reactions to a human pushing to the run branch.
 const (
 	HumanPushPause    = "pause"
@@ -640,6 +665,10 @@ func (c *Config) ApplyDefaults() {
 	if c.Workflow.Concurrency == 0 {
 		c.Workflow.Concurrency = 1
 	}
+	if c.Retention.Workdirs == nil {
+		d := Duration(DefaultWorkdirRetention)
+		c.Retention.Workdirs = &d
+	}
 }
 
 // Validate reports configuration errors.
@@ -712,6 +741,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Budget.RunCost < 0 || c.Budget.DailyCost < 0 || c.Budget.DailyRuns < 0 || c.Budget.RunTime < 0 {
 		errs = append(errs, errors.New("budget values must not be negative"))
+	}
+	if c.Retention.WorkdirAge() < 0 {
+		errs = append(errs, errors.New("retention.workdirs must not be negative (0 keeps checkouts until loop clean)"))
 	}
 	switch c.Workflow.OnHumanPush {
 	case HumanPushPause, HumanPushContinue:

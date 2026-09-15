@@ -475,6 +475,9 @@ func (e *Engine) WorkdirFor(branch string) string {
 
 func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseCheckout, "")
+	if r.Branch != "" {
+		return e.restoreWorkdir(ctx, r)
+	}
 	it := r.Item
 	want := e.BranchFor(it)
 	var branch string
@@ -527,6 +530,46 @@ func (e *Engine) checkout(ctx context.Context, r *state.Run) error {
 		}
 	}
 	r.SetPhase(state.PhaseSetup, "")
+	return nil
+}
+
+// restoreWorkdir checks the run's existing branch out again after its
+// workdir was removed (loop clean, retention), from the remote the branch
+// was pushed to. The item stays claimed; the setup steps run again so the
+// checkout is usable for fix rounds, and the run continues where it was
+// parked.
+func (e *Engine) restoreWorkdir(ctx context.Context, r *state.Run) error {
+	remote := e.pushRemote()
+	r.Workdir = e.WorkdirFor(r.Branch)
+	e.logf(r, "checking branch %s out again into %s (the workdir was removed)", r.Branch, r.Workdir)
+	if e.Cfg.Repo.Workdir == "worktree" {
+		if err := gitx.EnsureBaseClone(ctx, e.Cfg.Repo.URL, e.baseRepo(), e.Cfg.Repo.Base); err != nil {
+			return err
+		}
+		if err := e.ensureFork(ctx, e.baseRepo()); err != nil {
+			return err
+		}
+		if err := gitx.AddWorktreeFor(ctx, e.baseRepo(), r.Workdir, remote, r.Branch); err != nil {
+			return err
+		}
+	} else {
+		if err := gitx.Clone(ctx, e.Cfg.Repo.URL, r.Workdir, r.Branch+"-tmp", e.Cfg.Repo.Base); err != nil {
+			return err
+		}
+		if err := e.ensureFork(ctx, r.Workdir); err != nil {
+			return err
+		}
+		if err := gitx.CheckoutRemote(ctx, r.Workdir, remote, r.Branch); err != nil {
+			return err
+		}
+	}
+	if err := e.linkSkills(r); err != nil {
+		return err
+	}
+	if err := e.writeAgentSettings(r); err != nil {
+		return err
+	}
+	r.SetPhase(state.PhaseSetup, "branch restored")
 	return nil
 }
 
@@ -606,6 +649,13 @@ func (e *Engine) setup(ctx context.Context, r *state.Run) error {
 	r.SetPhase(state.PhaseSetup, "")
 	if err := e.runSteps(ctx, r, e.Cfg.Steps.Setup, "setup"); err != nil {
 		return err
+	}
+	if r.PR != nil {
+		// A restored checkout of a run that already has a PR goes back
+		// to watching it.
+		r.SetPhase(state.PhaseMonitor, "")
+		r.NextPoll = time.Time{}
+		return nil
 	}
 	if e.Cfg.Workflow.Plan || e.Cfg.HasGate(config.GateBeforeCode) {
 		r.SetPhase(state.PhasePlan, "")

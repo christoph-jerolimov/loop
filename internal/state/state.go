@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -155,12 +156,31 @@ type Session struct {
 }
 
 // Store manages the runs folder.
+//
+// Listing keeps every run it has parsed in memory, keyed by run id, with
+// the size and modification time of its run.yaml. A later listing parses
+// a file again only when those changed, so a watch tick over thousands of
+// finished runs costs a directory read and one stat per run instead of a
+// YAML parse per run. Runs written by another loop process are picked up
+// the same way. Callers get their own copy of every run, never the cached
+// one, so a run being driven in one goroutine is not seen half-changed
+// by a listing in another.
 type Store struct {
 	Root string // <project>/.loop/runs
 	// Now stamps new runs; nil means the wall clock. The engine shares its
 	// clock here so a recurring item's next occurrence is computed from
 	// the same time that started the previous one.
 	Now func() time.Time
+
+	mu    sync.Mutex
+	cache map[string]cached
+}
+
+// cached is one parsed run and the file state it was parsed from.
+type cached struct {
+	mod  time.Time
+	size int64
+	run  *Run
 }
 
 // NewStore creates the store under the given .loop folder.
@@ -209,12 +229,12 @@ func (s *Store) Create(it *item.Item, runner string) (*Run, error) {
 // FileName is the run state file inside the run folder.
 const FileName = "run.yaml"
 
-// Save writes run.yaml atomically.
+// Save writes run.yaml atomically and refreshes the listing cache.
 func (s *Store) Save(r *Run) error {
 	if r.dir == "" {
 		r.dir = s.Dir(r.ID)
 	}
-	r.Updated = time.Now()
+	r.Updated = s.now()
 	b, err := yaml.Marshal(r)
 	if err != nil {
 		return err
@@ -223,10 +243,17 @@ func (s *Store) Save(r *Run) error {
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(r.dir, FileName))
+	path := filepath.Join(r.dir, FileName)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if st, err := os.Stat(path); err == nil {
+		s.remember(r.ID, st, r)
+	}
+	return nil
 }
 
-// Load reads one run.
+// Load reads one run from disk.
 func (s *Store) Load(id string) (*Run, error) {
 	b, err := os.ReadFile(filepath.Join(s.Dir(id), FileName))
 	if err != nil {
@@ -240,7 +267,19 @@ func (s *Store) Load(id string) (*Run, error) {
 	return r, nil
 }
 
-// List returns every run, newest first.
+// remember puts a copy of the run into the cache under the file state it
+// was written or read with.
+func (s *Store) remember(id string, st os.FileInfo, r *Run) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cache == nil {
+		s.cache = map[string]cached{}
+	}
+	s.cache[id] = cached{mod: st.ModTime(), size: st.Size(), run: r.clone()}
+}
+
+// List returns every run, newest first. Runs whose run.yaml did not
+// change since the last listing come from the cache.
 func (s *Store) List() ([]*Run, error) {
 	entries, err := os.ReadDir(s.Root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -249,19 +288,69 @@ func (s *Store) List() ([]*Run, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cache == nil {
+		s.cache = map[string]cached{}
+	}
+	seen := make(map[string]bool, len(entries))
 	var out []*Run
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		r, err := s.Load(e.Name())
+		id := e.Name()
+		st, err := os.Stat(filepath.Join(s.Root, id, FileName))
 		if err != nil {
 			continue
 		}
-		out = append(out, r)
+		c, ok := s.cache[id]
+		if !ok || !c.mod.Equal(st.ModTime()) || c.size != st.Size() {
+			r, err := s.Load(id)
+			if err != nil {
+				continue
+			}
+			c = cached{mod: st.ModTime(), size: st.Size(), run: r}
+			s.cache[id] = c
+		}
+		seen[id] = true
+		out = append(out, c.run.clone())
+	}
+	for id := range s.cache {
+		if !seen[id] {
+			delete(s.cache, id)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
 	return out, nil
+}
+
+// clone copies the run so that a caller can change it without touching
+// the cache or another caller's copy.
+func (r *Run) clone() *Run {
+	c := *r
+	c.Sessions = append([]Session(nil), r.Sessions...)
+	c.HandledComments = append([]int64(nil), r.HandledComments...)
+	c.HandledReviews = append([]int64(nil), r.HandledReviews...)
+	c.Events = append([]Event(nil), r.Events...)
+	if r.PR != nil {
+		pr := *r.PR
+		c.PR = &pr
+	}
+	if r.Item != nil {
+		it := *r.Item
+		it.Labels = append([]string(nil), r.Item.Labels...)
+		it.DependsOn = append([]string(nil), r.Item.DependsOn...)
+		it.Comments = append([]item.Comment(nil), r.Item.Comments...)
+		if r.Item.Extra != nil {
+			it.Extra = make(map[string]string, len(r.Item.Extra))
+			for k, v := range r.Item.Extra {
+				it.Extra[k] = v
+			}
+		}
+		c.Item = &it
+	}
+	return &c
 }
 
 // Active returns runs that are not finished.
@@ -353,6 +442,16 @@ func (s *Store) Find(ref string) (*Run, error) {
 
 // Dir returns the run folder.
 func (r *Run) Dir() string { return r.dir }
+
+// HasWorkdir reports whether the run's checkout exists on disk. It is
+// gone after the cleanup phase, loop clean, or retention.
+func (r *Run) HasWorkdir() bool {
+	if r.Workdir == "" {
+		return false
+	}
+	st, err := os.Stat(r.Workdir)
+	return err == nil && st.IsDir()
+}
 
 // SummaryFile is where the agent writes the PR summary.
 func (r *Run) SummaryFile() string { return filepath.Join(r.dir, "summary.md") }

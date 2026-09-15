@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/christoph-jerolimov/loop/internal/engine"
+	"github.com/christoph-jerolimov/loop/internal/item"
 	"github.com/christoph-jerolimov/loop/internal/state"
 	"github.com/christoph-jerolimov/loop/internal/term"
 )
@@ -287,6 +288,9 @@ var joinCmd = &cobra.Command{
 		if r.Workdir == "" {
 			return fmt.Errorf("run %s has no workdir yet", r.ID)
 		}
+		if !r.HasWorkdir() {
+			return fmt.Errorf("run %s: workdir %s was removed (loop clean or retention.workdirs); loop resume %s checks the branch out again", r.ID, r.Workdir, r.ID)
+		}
 		sessionID := ""
 		for i := len(r.Sessions) - 1; i >= 0; i-- {
 			if r.Sessions[i].ID != "" {
@@ -299,16 +303,47 @@ var joinCmd = &cobra.Command{
 	},
 }
 
-var cleanAll bool
+var (
+	cleanAll       bool
+	cleanOlderThan string
+)
 
 var cleanCmd = &cobra.Command{
 	Use:   "clean [run]",
-	Short: "Remove workdirs of finished runs",
-	Args:  cobra.MaximumNArgs(1),
+	Short: "Remove workdirs of finished runs; run folders with logs and sessions stay",
+	Long: `Removes the checkouts (worktrees or clones) of finished runs, or of one
+run. The run folders under .loop/runs with run.yaml, the log and every
+session transcript and prompt are kept. loop resume checks the branch of a
+cleaned run out again when the run still has a PR.
+
+--older-than applies the retention rule by hand: only runs that last
+changed more than the given time ago (7d, 2w, 36h) lose their checkout.
+loop watch does the same every ten minutes with retention.workdirs.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := load()
 		if err != nil {
 			return err
+		}
+		if cleanOlderThan != "" {
+			if len(args) > 0 || cleanAll {
+				return errors.New("--older-than takes no run argument and no --force")
+			}
+			age, err := item.ParseInterval(cleanOlderThan)
+			if err != nil {
+				return fmt.Errorf("--older-than: %w", err)
+			}
+			retired, err := a.Engine.Retire(cmd.Context(), age)
+			for _, r := range retired {
+				fmt.Printf("removed %s\n", r.Workdir)
+			}
+			if err != nil {
+				return err
+			}
+			if len(retired) == 0 {
+				fmt.Printf("nothing to remove: no finished run with a workdir last changed more than %s ago\n", item.FormatInterval(age))
+			}
+			return nil
 		}
 		runs, err := a.Engine.Store.List()
 		if err != nil {
@@ -332,7 +367,7 @@ var cleanCmd = &cobra.Command{
 			if r.Phase.Active() && !cleanAll {
 				return fmt.Errorf("run %s is still %s; use --force", r.ID, r.Phase)
 			}
-			if r.Workdir == "" {
+			if !r.HasWorkdir() {
 				continue
 			}
 			if err := a.Engine.RemoveWorkdir(cmd.Context(), r); err != nil {
@@ -346,4 +381,5 @@ var cleanCmd = &cobra.Command{
 
 func init() {
 	cleanCmd.Flags().BoolVar(&cleanAll, "force", false, "also clean active runs")
+	cleanCmd.Flags().StringVar(&cleanOlderThan, "older-than", "", "only finished runs that last changed more than this long ago (7d, 2w, 36h)")
 }

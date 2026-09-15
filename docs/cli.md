@@ -190,15 +190,23 @@ from the pull request with a `/loop approve` comment.
 ## `loop resume <run>`
 
 Put a `blocked` or `failed` run back into the workflow: into `monitor`
-when it has a PR, otherwise into a new agent session. A `/loop resume`
+when it has a PR, otherwise into a new agent session. When the checkout
+was removed (`loop clean`, retention), the branch is checked out again
+from the remote first and the setup steps run again; a run without a PR
+and without a checkout starts over on a fresh branch. A `/loop resume`
 comment on the PR from a collaborator with push access does the same.
 
 ## `loop join <run>`
 
 Print the command that opens the run's workdir and resumes its latest
 agent session, for example `cd .loop/workdirs/… && claude --resume <id>`.
+Fails with a pointer to `loop resume` when the checkout was removed.
 
 ## `loop clean [run]`
 
-Remove the workdirs of finished runs, or of one run. `--force` also cleans
-an active run and marks it blocked.
+Remove the workdirs of finished runs, or of one run. Run folders with
+`run.yaml`, logs and session transcripts stay. `--force` also cleans an
+active run and marks it blocked. `--older-than 7d` applies the
+[retention](configuration.md#retention) rule by hand: only finished runs
+that last changed more than that long ago lose their checkout. A cleaned
+run with a PR checks its branch out again on `loop resume`.

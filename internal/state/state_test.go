@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/christoph-jerolimov/loop/internal/item"
 )
 
@@ -166,6 +168,72 @@ func TestListActiveForItemAndFind(t *testing.T) {
 				t.Errorf("Find(%q) = %v, %v; want %s", ref, r, err, want)
 			}
 		}
+	}
+}
+
+func TestListCachesUnchangedRuns(t *testing.T) {
+	s := newStore(t)
+	r := create(t, s, "auth")
+	r.Branch = "loop/auth"
+	r.Item.Labels = []string{"ready"}
+	s.Save(r)
+
+	first, _ := s.List()
+	if len(first) != 1 || first[0].Branch != "loop/auth" {
+		t.Fatalf("List = %v", ids(first))
+	}
+	// A caller's changes never reach the cache or the next caller.
+	first[0].Branch = "scratch"
+	first[0].Item.Labels[0] = "changed"
+	first[0].Sessions = append(first[0].Sessions, Session{ID: "x"})
+	second, _ := s.List()
+	if second[0].Branch != "loop/auth" || second[0].Item.Labels[0] != "ready" || len(second[0].Sessions) != 0 {
+		t.Errorf("listing must hand out copies, got %+v", second[0])
+	}
+	if second[0] == first[0] {
+		t.Error("two listings must not share a run")
+	}
+	// Save through the store is seen immediately.
+	r.Phase = PhaseDone
+	s.Save(r)
+	if got, _ := s.List(); got[0].Phase != PhaseDone {
+		t.Errorf("phase after Save = %s", got[0].Phase)
+	}
+	// A run.yaml written by another process is seen once its file changes.
+	other := &Run{ID: r.ID, ItemID: r.ItemID, Item: r.Item, Phase: PhaseBlocked, Error: "written elsewhere, with a longer body", Created: r.Created}
+	b, _ := yaml.Marshal(other)
+	if err := os.WriteFile(filepath.Join(s.Dir(r.ID), FileName), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.List(); got[0].Phase != PhaseBlocked || got[0].Error == "" {
+		t.Errorf("external write not picked up: %+v", got[0])
+	}
+	// A removed run folder leaves the cache.
+	os.RemoveAll(s.Dir(r.ID))
+	if got, _ := s.List(); len(got) != 0 {
+		t.Errorf("removed run still listed: %v", ids(got))
+	}
+	s.mu.Lock()
+	n := len(s.cache)
+	s.mu.Unlock()
+	if n != 0 {
+		t.Errorf("cache must forget removed runs, has %d", n)
+	}
+}
+
+func TestHasWorkdir(t *testing.T) {
+	s := newStore(t)
+	r := create(t, s, "auth")
+	if r.HasWorkdir() {
+		t.Error("no workdir yet")
+	}
+	r.Workdir = filepath.Join(t.TempDir(), "w")
+	if r.HasWorkdir() {
+		t.Error("a path that does not exist is no workdir")
+	}
+	os.MkdirAll(r.Workdir, 0o755)
+	if !r.HasWorkdir() {
+		t.Error("existing folder must count")
 	}
 }
 

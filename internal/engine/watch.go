@@ -72,7 +72,14 @@ func (e *Engine) Watch(ctx context.Context, o WatchOptions) error {
 		fmt.Fprintln(e.Out, e.watchIntro(o))
 	}
 	var lastPick, lastStatus string
+	var lastRetire time.Time
 	for {
+		if len(only) == 0 && time.Since(lastRetire) >= retireEvery {
+			// Old checkouts go before new ones are made, and then every
+			// ten minutes, so a worker left alone does not fill the disk.
+			lastRetire = time.Now()
+			e.retire(ctx)
+		}
 		runs, err := e.Store.Active()
 		if err != nil {
 			return err

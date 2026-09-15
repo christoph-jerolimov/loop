@@ -37,6 +37,21 @@ workflow:
 	if cfg.Workflow.PollInterval.D() != 2*time.Minute || cfg.Workflow.FixRounds != 3 || cfg.Workflow.MergeMethod != "squash" {
 		t.Errorf("workflow defaults: %+v", cfg.Workflow)
 	}
+	if cfg.Retention.WorkdirAge() != DefaultWorkdirRetention {
+		t.Errorf("retention default = %v, want %v", cfg.Retention.WorkdirAge(), DefaultWorkdirRetention)
+	}
+	kept := t.TempDir()
+	os.WriteFile(filepath.Join(kept, FileName), []byte("repo:\n  url: git@github.com:acme/widgets.git\nsources:\n  - type: markdown\nretention:\n  workdirs: 0\nagent:\n  timeout: 2d\n"), 0o644)
+	explicit, err := Load(kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Retention.WorkdirAge() != 0 {
+		t.Errorf("an explicit 0 keeps checkouts, got %v", explicit.Retention.WorkdirAge())
+	}
+	if explicit.Agent.Timeout.D() != 48*time.Hour {
+		t.Errorf("durations accept days, got %v", explicit.Agent.Timeout.D())
+	}
 	if !cfg.HasGate(GateBeforeMerge) {
 		t.Error("auto merge policies default to a before-merge gate")
 	}

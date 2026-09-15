@@ -141,6 +141,9 @@ pr:
 #   daily_cost: 40
 #   daily_runs: 10
 
+# retention:
+#   workdirs: 7d             # remove the checkouts of finished runs after this; logs and sessions stay, 0 keeps them
+
 workflow:
   poll_interval: 60s
   fix_rounds: 3              # review/CI fix sessions per run
