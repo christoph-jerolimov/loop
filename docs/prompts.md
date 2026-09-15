@@ -70,6 +70,77 @@ anyone can write them and they reach the agent verbatim; see
 The same pattern applies to fix rounds: the review, CI and conflict
 templates receive the feedback as data and decide how to present it.
 
+## Spec-driven development with OpenSpec
+
+[OpenSpec](https://github.com/Fission-AI/OpenSpec) keeps a repository's
+requirements as markdown specs under `openspec/specs/` and takes every
+change through three stages: a proposal under `openspec/changes/<id>/`
+(with delta specs and a task list), the implementation, and an archive
+step that merges the delta specs into the main specs and moves the change
+to `openspec/changes/archive/`. Interactively that is `/opsx:propose`,
+`/opsx:apply` and `/opsx:archive`, one command at a time.
+
+[examples/session-openspec.md](examples/session-openspec.md) is a session
+template that does all three in the initial session. The agent writes the
+proposal, validates it with `openspec validate <id> --strict` and commits
+it, implements the tasks and ticks them off, then runs
+`openspec archive <id> --yes` and commits the result. The pull request
+loop opens therefore carries the code, the updated specs and the archived
+change together, a reviewer reads the proposal, the spec deltas and the
+implementation in one diff, and nothing stays behind under
+`openspec/changes/` waiting for a second session. The proposal takes the
+place of loop's own [plan phase](workflow.md#plan-before-code), so
+`workflow.plan` is not needed; a `before-pr` gate still lets you read the
+proposal and the diff before the PR opens.
+
+What the repository and the project need:
+
+- The repository is set up with `openspec init` and the `openspec/` folder
+  and the installed commands or skills (`.claude/commands/opsx/`,
+  `.claude/skills/openspec-*` for Claude Code) are committed, so every
+  fresh worktree has them.
+- The `openspec` CLI is on the `PATH` where loop runs
+  (`npm install -g @fission-ai/openspec`); sessions and verify steps call
+  it.
+- `loop.yaml` points at the template, lets the headless session run the
+  CLI, and validates the merged specs after every session and fix round:
+
+```yaml
+prompts:
+  session: prompts/session.md   # a copy of docs/examples/session-openspec.md
+
+agent:
+  allow:                        # replaces the defaults, so the git rules are repeated
+    - "Bash(openspec:*)"
+    - "Bash(npm test:*)"
+    - "Bash(git status:*)"
+    - "Bash(git diff:*)"
+    - "Bash(git log:*)"
+    - "Bash(git show:*)"
+    - "Bash(git add:*)"
+    - "Bash(git commit:*)"
+    - "Bash(git restore:*)"
+    - "Bash(git stash:*)"
+    - "Bash(git branch:*)"
+    - "Bash(git merge:*)"
+    - "Bash(git rm:*)"
+    - "Bash(git mv:*)"
+
+steps:
+  verify:
+    - name: specs
+      run: openspec validate --specs --strict
+    - name: tests
+      run: npm test
+```
+
+Fix rounds use the ordinary review, CI and conflict templates: a spec
+correction a reviewer asks for is then an edit of the already archived
+change and the merged spec, which the verify step validates again before
+the round pushes. Harnesses other than Claude Code get the same prompt;
+the template names the stages and the CLI calls, so an agent without the
+`/opsx` commands follows them by hand.
+
 ## Recurring items
 
 For an item with `every:` the built-in session template adds a "Recurring
