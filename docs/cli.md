@@ -24,6 +24,13 @@ without the flag, a source for the repository's own host is added when its
 token is available (`GITHUB_TOKEN` or `gh auth login`, `GITLAB_TOKEN`), so
 `loop list` works right away and needs no token otherwise.
 
+When the checkout reveals its toolchain, its test command becomes the
+`steps.verify` step and `agent.allow` lets the session run it: `go.mod`
+(`go test ./...`), `package.json` with the lockfile deciding between npm,
+pnpm, yarn and bun, `Cargo.toml`, `pyproject.toml` (`pytest`), `pom.xml`,
+`build.gradle` and a `Makefile` with a `test` target. Nothing detected
+leaves both empty, and `loop doctor` reminds you to add the commands.
+
 Prompts use the built-in templates, which improve with every loop release.
 `--prompts` writes editable copies to `prompts/` and points `loop.yaml` at
 them; in an existing project it writes the copies and prints the keys to
