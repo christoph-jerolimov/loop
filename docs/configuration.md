@@ -186,7 +186,7 @@ See [prompts.md](prompts.md).
 | `env` | none | Extra environment variables for sessions and steps. |
 | `env_passthrough` | none | Variable names or globs (`DATABASE_URL`, `MY_APP_*`) sessions inherit from loop's environment on top of the built-in allowlist. See below. |
 | `extra_args` | none | Extra CLI arguments, appended after the template. |
-| `sandbox` | off | Run every session in a podman container that sees only the workdir and the run folder. See [sandbox](#sandbox). |
+| `sandbox` | off | Run every session and every `run:` and `script:` step in a podman container that sees only the workdir and the run folder. See [sandbox](#sandbox). |
 
 ### Harnesses
 
@@ -321,14 +321,15 @@ agent:
 ```
 
 `run:` and `script:` steps are your own scripts and keep the full
-environment; `agent:` steps are sessions and get the allowlist.
+environment; `agent:` steps are sessions and get the allowlist. With a
+[sandbox](#sandbox) steps run in the container and get the allowlist too.
 
 ### Sandbox
 
-With `agent.sandbox` every session runs in a container instead of on the
-host. The container sees the run's checkout and its run folder and nothing
-else of the machine: no code host token, no SSH agent, no project folder,
-no other run.
+With `agent.sandbox` every session, and every `run:` and `script:` step,
+runs in a container instead of on the host. The container sees the run's
+checkout and its run folder and nothing else of the machine: no code host
+token, no SSH agent, no project folder, no other run.
 
 ```yaml
 repo:
@@ -344,13 +345,13 @@ agent:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `image` | none | The container image. Setting it turns the sandbox on. It must contain `git` and the harness command; `loop doctor` checks both. |
+| `image` | none | The container image. Setting it turns the sandbox on. It must contain `sh`, `git`, the harness command and the project's toolchain; `loop doctor` checks the first three. |
 | `runtime` | `podman` when `image` is set | `podman` or `none`. |
 | `home` | `loop-<name>-home` | Named volume mounted as `/home/agent`, the home directory inside the container. Logins and session transcripts live there, so a later session, and `loop join`, find them. |
 | `mounts` | none | Extra mounts in podman's `-v` syntax: `host-path-or-volume:container-path[:options]`. Host paths are resolved like other paths in `loop.yaml`, so `~/` and paths relative to the project folder work. Toolchain caches are the typical use. |
 | `args` | none | Extra `podman run` arguments, placed before the image: resource limits, a `--network` choice, labels. |
 
-What the session gets:
+What a session or step gets:
 
 - **The workdir**, read-write, at its host path. The agent edits and
   commits there; loop reads the commits back on the host afterwards.
@@ -361,7 +362,8 @@ What the session gets:
   The prompt file is there, and so are the summary, plan and findings files
   the agent writes.
 - **Skill folders** from `agent.skills`, read-only, at their host paths, so
-  the links in `<workdir>/.claude/skills/` resolve.
+  the links in `<workdir>/.claude/skills/` resolve. A `script:` step's file
+  is mounted the same way, read-only, for that step.
 - **The home volume**, read-write, as `/home/agent`.
 - **The environment** of a session (see above) minus everything that is a
   host path or socket: `PATH`, `HOME`, `TMPDIR`, `XDG_*`, `SSH_AUTH_SOCK`,
@@ -374,8 +376,9 @@ What the session gets:
 
 The container runs as your user (`--userns=keep-id`), so files it writes
 into the checkout are yours, with all capabilities dropped and
-`no-new-privileges`. It is removed when the session ends, and a session
-that hits `agent.timeout` is stopped with `podman rm -f`. Network access
+`no-new-privileges`. Every session and every step is its own container,
+removed when the process ends; a session that hits `agent.timeout` is
+stopped with `podman rm -f`. Network access
 stays on, because the harness has to reach its model provider; add
 `--network` options in `args` to restrict it. Every path is mounted at the
 same location inside and outside, which is why the container needs no
@@ -404,10 +407,23 @@ RUN mkdir -p /home/agent && chmod 777 /home/agent
 ENV HOME=/home/agent
 ```
 
-`run:` and `script:` steps still run on the host with the full
-environment; only sessions are sandboxed. On macOS podman runs in a
-virtual machine that mounts your home directory by default; a project
-elsewhere needs the machine configured with that path.
+Steps run in the container like sessions, so `npm ci` in `steps.setup`
+installs into the image's toolchain and `npm test` in `steps.verify` runs
+against it; there is no host toolchain to drift from. A step that needs
+something the container must not have, typically a notification with a
+host credential, takes `host: true` and runs on the host with loop's full
+environment as it would without a sandbox:
+
+```yaml
+steps:
+  blocked:
+    - script: hooks/notify-slack.sh
+      host: true
+```
+
+On macOS podman runs in a virtual machine that mounts your home directory
+by default; a project elsewhere needs the machine configured with that
+path.
 
 How the prompt reaches the agent is part of the harness profile (see
 [harnesses](#harnesses)): every prompt is a file in the run folder first,
@@ -426,7 +442,9 @@ exactly one of:
 | `script: <path>` | Executable file, path relative to `loop.yaml`, executed inside the workdir. |
 | `agent: <path>` | Prompt template rendered with the run data and executed as an agent session. |
 
-Optional keys: `name`, `model` and `timeout` (agent steps).
+Optional keys: `name`, `model` and `timeout` (agent steps), and `host`
+(run and script steps: stay on the host when sessions run in a
+[sandbox](#sandbox)).
 
 | Phase | When |
 | --- | --- |

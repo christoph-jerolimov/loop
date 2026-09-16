@@ -24,9 +24,9 @@ keep that contained and what remains your decision.
   merge policy and gates you configure. With `merge: manual` nothing lands
   on the base branch without a human.
 - **The machine.** Without a sandbox the agent runs as you, with your
-  files and your network. `agent.sandbox` runs every session in a podman
-  container that sees the run's checkout, its run folder and a home volume
-  and nothing else: no project folder, no other run, no SSH agent, no
+  files and your network. `agent.sandbox` runs every session and every
+  `run:` and `script:` step in a podman container that sees the run's
+  checkout, its run folder and a home volume and nothing else: no project folder, no other run, no SSH agent, no
   tokens beyond the harness's own. That turns the withheld credentials
   into a wall for the harnesses that run with an auto-approve flag, and it
   means `git push` cannot succeed from inside whatever the agent does (see

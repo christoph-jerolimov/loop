@@ -104,8 +104,8 @@ agent:
   # env_passthrough: [DATABASE_URL, "MY_APP_*"]  # sessions never see GITHUB_TOKEN, GITLAB_TOKEN or JIRA_*
   # skills:                  # folders symlinked into <workdir>/.claude/skills
   #   - ~/skills/my-team-conventions
-  # sandbox:                 # run sessions in a podman container that sees only the checkout and run folder
-  #   image: ghcr.io/acme/loop-harness:1   # git, the harness CLI and your toolchain; needs repo.workdir: clone
+  # sandbox:                 # run sessions and steps in a podman container that sees only the checkout and run folder
+  #   image: ghcr.io/acme/loop-harness:1   # sh, git, the harness CLI and your toolchain; needs repo.workdir: clone
   #   mounts: ["~/.cache/go-build:/home/agent/.cache/go-build:ro"]
   #   args: ["--memory=4g"]
 
@@ -130,6 +130,8 @@ steps:
   cleanup: []                # before the workdir is removed
   blocked: []                # run parked and needs a human (LOOP_RUN_ERROR says why)
   failed: []                 # run failed; good place for a Slack or mail notification
+    # - script: hooks/notify.sh
+    #   host: true             # with agent.sandbox: run on the host, with loop's full environment
 
 pr:
   draft: true                # opened as draft, marked ready once CI is green

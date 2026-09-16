@@ -271,7 +271,8 @@ func (c *Config) SkillMounts() []agent.Mount {
 
 // Step is a shell command (run), a script file relative to loop.yaml
 // (script), or an agent session driven by a prompt template (agent).
-// Every kind executes inside the workdir.
+// Every kind executes inside the workdir, and inside the sandbox container
+// when there is one.
 type Step struct {
 	Name    string   `yaml:"name"`
 	Run     string   `yaml:"run"`
@@ -279,6 +280,10 @@ type Step struct {
 	Agent   string   `yaml:"agent"`
 	Model   string   `yaml:"model"`
 	Timeout Duration `yaml:"timeout"`
+	// Host runs a run or script step on the host with loop's full
+	// environment even when sessions are sandboxed, for a notification that
+	// needs a credential the container must not have.
+	Host bool `yaml:"host"`
 }
 
 // Kind returns run, script or agent.

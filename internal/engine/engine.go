@@ -757,27 +757,44 @@ func (e *Engine) runSteps(ctx context.Context, r *state.Run, steps []config.Step
 func (e *Engine) runStep(ctx context.Context, r *state.Run, st config.Step, phase string) (string, error) {
 	name := st.Label()
 	if st.Run != "" || st.Script != "" {
-		var cmd *exec.Cmd
+		bin, args := "sh", []string{"-c", st.Run}
+		var mounts []agent.Mount
 		if st.Run != "" {
 			e.logf(r, "%s step: %s", phase, name)
-			cmd = exec.CommandContext(ctx, "sh", "-c", st.Run)
 		} else {
 			script := e.Cfg.Resolve(st.Script)
 			if _, err := os.Stat(script); err != nil {
 				return "", fmt.Errorf("step %q: %w", name, err)
 			}
 			e.logf(r, "%s script: %s", phase, st.Script)
-			cmd = exec.CommandContext(ctx, script)
+			bin, args = script, nil
+			mounts = []agent.Mount{{Path: script, ReadOnly: true}}
 		}
-		cmd.Dir = r.Workdir
-		cmd.Env = os.Environ()
-		for k, v := range e.env(r) {
-			cmd.Env = append(cmd.Env, k+"="+v)
+		var cmd *exec.Cmd
+		finish := func() {}
+		if sb := e.Cfg.SandboxSpec(); sb != nil && !st.Host {
+			// In the sandbox a step is a process in the same container setup
+			// as a session, with the session environment; a script is
+			// mounted read-only at its host path.
+			c := agent.Command(ctx, agent.Options{
+				Workdir: r.Workdir, Env: e.env(r), EnvPassthrough: e.Cfg.Agent.EnvPassthrough,
+				Sandbox: sb, RunDir: r.Dir(), Mounts: append(e.Cfg.SkillMounts(), mounts...),
+			}, bin, args, false)
+			cmd, finish = c.Cmd, c.Finish
+		} else {
+			cmd = exec.CommandContext(ctx, bin, args...)
+			cmd.Dir = r.Workdir
+			cmd.Env = os.Environ()
+			for k, v := range e.env(r) {
+				cmd.Env = append(cmd.Env, k+"="+v)
+			}
 		}
 		var buf strings.Builder
 		cmd.Stdout = io.MultiWriter(&buf, e.Out)
 		cmd.Stderr = io.MultiWriter(&buf, e.Out)
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		finish()
+		if err != nil {
 			return buf.String(), fmt.Errorf("step %q failed: %w", name, err)
 		}
 		return buf.String(), nil

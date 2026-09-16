@@ -165,7 +165,7 @@ func (d *doctor) checkPermissions(cfg *config.Config, runner *agent.Runner) {
 }
 
 // checkSandbox checks the container runtime, that the image is present and
-// that git and the harness are inside it.
+// that sh, git and the harness are inside it.
 func (d *doctor) checkSandbox(cfg *config.Config, runner *agent.Runner) {
 	sb := cfg.Agent.Sandbox
 	if _, err := exec.LookPath(sb.Runtime); err != nil {
@@ -180,8 +180,10 @@ func (d *doctor) checkSandbox(cfg *config.Config, runner *agent.Runner) {
 		return
 	}
 	d.ok("sandbox image %s is present", sb.Image)
-	for _, bin := range []string{"git", runner.Command} {
-		out, err := exec.CommandContext(ctx, sb.Runtime, "run", "--rm", "--entrypoint", bin, sb.Image, "--version").Output()
+	for _, probe := range [][]string{{"sh", "-c", "echo sh"}, {"git", "--version"}, {runner.Command, "--version"}} {
+		bin := probe[0]
+		args := append([]string{"run", "--rm", "--entrypoint", bin, sb.Image}, probe[1:]...)
+		out, err := exec.CommandContext(ctx, sb.Runtime, args...).Output()
 		if err != nil {
 			d.fail("%s is not runnable in image %s: %v", bin, sb.Image, firstLine(err.Error()))
 			continue

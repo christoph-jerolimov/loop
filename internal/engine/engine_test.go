@@ -666,3 +666,51 @@ func TestForkWorkflow(t *testing.T) {
 		t.Errorf("branch should be deleted on the fork: %v", lc.gh.deleted)
 	}
 }
+
+// fakePodman logs every invocation to the run folder (the client carries
+// LOOP_RUN_DIR) and executes whatever follows the image, like a container
+// would: the harness, a step's sh -c, or a mounted script.
+const fakePodman = `#!/bin/sh
+printf '%s\n' "$@" >> "$LOOP_RUN_DIR/podman-calls"
+echo --- >> "$LOOP_RUN_DIR/podman-calls"
+while [ $# -gt 0 ]; do a=$1; shift; [ "$a" = "example.test/harness:1" ] && break; done
+[ $# -gt 0 ] && exec "$@"
+`
+
+func TestSandboxRunsSessionsAndStepsInContainer(t *testing.T) {
+	lc := newLifecycleWith(t, func(cfg *config.Config, lc *lifecycle) {
+		os.WriteFile(filepath.Join(lc.root, "bin", "podman"), []byte(fakePodman), 0o755)
+		cfg.Repo.Workdir = "clone"
+		cfg.Agent.Sandbox = config.Sandbox{Image: "example.test/harness:1"}
+		cfg.Steps.BeforePR = []config.Step{{Name: "notify", Run: `echo host > "$LOOP_RUN_DIR/host-ran"`, Host: true}}
+	})
+	lc.drive(t, state.PhaseMonitor)
+	r := lc.run
+	calls, err := os.ReadFile(filepath.Join(r.Dir(), "podman-calls"))
+	if err != nil {
+		t.Fatalf("podman was not used: %v\n%s", err, lc.out.String())
+	}
+	script := filepath.Join(lc.proj, "hooks", "setup.sh")
+	for _, want := range []string{
+		"-v\n" + r.Workdir + ":" + r.Workdir + ":Z\n", "-v\n" + r.Dir() + ":" + r.Dir() + ":Z\n", "-v\nloop-proj-home:/home/agent\n",
+		"-v\n" + script + ":" + script + ":ro,z\n", "example.test/harness:1\n" + script + "\n---", // the setup script, mounted and run
+		"example.test/harness:1\nsh\n-c\necho run >>", // the verify step
+		"example.test/harness:1\nclaude\n-p\n",        // the session
+		"-e\nLOOP_RUN_DIR\n",
+	} {
+		if !strings.Contains(string(calls), want) {
+			t.Errorf("podman calls missing %q:\n%s", want, calls)
+		}
+	}
+	if strings.Contains(string(calls), "host-ran") {
+		t.Errorf("a host: true step must not run in the container:\n%s", calls)
+	}
+	for _, f := range []string{"setup-ran", "host-ran", "verify-runs"} {
+		if _, err := os.Stat(filepath.Join(r.Dir(), f)); err != nil {
+			t.Errorf("%s: %v\n%s", f, err, lc.out.String())
+		}
+	}
+	if !strings.Contains(lc.out.String(), "in podman image example.test/harness:1") {
+		t.Errorf("session log does not name the sandbox:\n%s", lc.out.String())
+	}
+}

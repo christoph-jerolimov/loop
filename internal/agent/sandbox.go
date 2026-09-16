@@ -29,7 +29,8 @@ type Sandbox struct {
 	Args []string
 }
 
-// Mount is a host directory made visible in the container at the same path.
+// Mount is a host directory or file made visible in the container at the
+// same path.
 type Mount struct {
 	Path     string
 	ReadOnly bool
@@ -117,9 +118,8 @@ func (s *Sandbox) clientEnv(session []string) []string {
 	return out
 }
 
-// kill removes the container. Killing the runtime client, which is what a
-// cancelled context does, leaves the container running; this makes sure a
-// timed-out session stops editing the workdir.
+// kill removes the container, so that a timed-out session or step stops
+// editing the workdir.
 func (s *Sandbox) kill(container string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
