@@ -9,14 +9,14 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@astrojs/markdown-satteri": "^0.4.1",
+    "@astrojs/markdown-satteri": "^0.4.4",
     "@astrojs/sitemap": "^3.7.4",
-    "astro": "^7.3.2",
+    "astro": "^7.4.1",
     "github-slugger": "^2.0.0",
     "satteri": "^0.10.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
+    "@astrojs/check": "^0.9.11",
     "@types/node": "^22.20.2",
     "typescript": "^5.9.3"
   }
